@@ -1,55 +1,107 @@
-# Yuaz DDSP Resampler v0.2.7-alpha.1
+# Yuaz DDSP Resampler
 
-Experimental sample-conditioned DDSP resampler for UTAU/OpenUtau built around a local Yuaz SGR Encoder/DDSP installation.
+An external OpenUtau resampler built around Yuaz SGR. The project adds voicebank preparation, multipitch timbre adaptation, articulation preservation, optional learned high-band extension, loudness normalization, and OpenUtau integration.
 
-This release replaces per-sample voiced articulation transfer with a timbre-neutral canonical articulation dictionary. For multipitch banks, the same `base_alias` is aligned across real UTAU subbanks and its common temporal articulation pattern is retained while broad timbre and spectral tilt are removed.
+Chinese documentation: [README.zh-CN.md](README.zh-CN.md)
 
-## What changed
+## Requirements
 
-- Dynamic canonical articulation built from real multipitch aliases.
-- `prefix.map` / UTAU subbank routing remains authoritative.
-- Per-alias fallback uses a timbre-neutral local trajectory when no multipitch counterpart exists.
-- Broad spectral tilt is removed from articulation conditioning.
-- A 3–9 kHz clarity guard prevents articulation transfer from broadly darkening the DDSP output.
-- The single-periodic-source hybrid remains intact: voiced PSOLA is not used.
-- Strict final-render active-RMS normalization from v0.2.6-alpha.2 is unchanged.
-- Existing Adapter, Anti-Leak, pitch timbre prototypes, Fidelity Refiner, and cache remain compatible.
+- macOS
+- Python 3
+- OpenUtau
+- a local Yuaz SGR checkout
+- a Yuaz SGR checkpoint
 
-Prepared banks gain:
+Yuaz SGR source code and model weights are not included in this repository. See [UPSTREAM.md](UPSTREAM.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-```text
-.yuaz/
-└── articulation/
-    ├── index.json
-    └── canonical/
-        └── *.npz
-```
-
-## Upgrade an already adapted bank
-
-Do not reset or Deep Adapt an already trained bank for this release. Run `prepare-voicebank.command` and choose **Fast Profile**. It reuses the existing cache and builds the canonical articulation dictionary without rerunning the Yuaz Encoder or gradient training.
-
-## macOS setup
+## Setup
 
 ```bash
-cd ~/Downloads/yuaz-ddsp-resampler-v0.2.7-alpha.1
 chmod +x *.command scripts/*.command yuaz-ddsp-resampler
-./purge-previous-version.command
 ./setup-macos.command
 ./configure-macos.command
-./self-test.command
 ```
 
-Then prepare each previously adapted voicebank with Fast Profile and install:
+`setup-macos.command` creates a local `.venv`. It uses the Tsinghua PyPI mirror by default and falls back to the default index if needed.
+
+`configure-macos.command` asks for the local Yuaz SGR repository and checkpoint if they are not found at the default paths.
+
+## Prepare a voicebank
 
 ```bash
+./prepare-voicebank.command
+```
+
+Preparation modes:
+
+1. Fresh Fast Profile
+2. Clean Deep Retrain
+3. Continue Deep Adapt
+4. Relearn High-Band
+
+Training state is stored in:
+
+```text
+<voicebank>/.yuaz-alpha8-rc3-2/
+```
+
+State-changing preparation creates an external backup before modifying training data. Backups are written under:
+
+```text
+~/Documents/Yuaz-DDSP-Backups/<voicebank>/
+```
+
+Manual backup and restore:
+
+```bash
+./backup-training.command
+./restore-previous-training.command
+./list-training-backups.command
+```
+
+## Install in OpenUtau
+
+```bash
+./self-test.command
 ./install-openutau-macos.command
 ```
 
-Select `Yuaz-DDSP-Resampler-v0.2.7-alpha.1.sh` after restarting OpenUtau. Default engine port: `47860`.
+Then restart OpenUtau and select:
 
-Use `inspect-voicebank.command` to verify canonical alias count, multipitch canonical count, fallback count, coherence, UTAU subbank routing, and loudness normalization.
+```text
+Yuaz-DDSP-Resampler-v0.2.7-alpha.8-rc.3.2.sh
+```
 
-## Upstream
+Uninstall the OpenUtau entry with:
 
-Yuaz SGR source code and model weights are not redistributed in this repository. A local upstream checkout and checkpoint are required. See `UPSTREAM.md` and `THIRD_PARTY_NOTICES.md`.
+```bash
+./uninstall-openutau-macos.command
+```
+
+## Controls
+
+| Flag | OpenUtau expression | Range | Default |
+|---|---|---:|---:|
+| `YM` | Yuaz Timbre Morph | -100..100 | 0 |
+| `YD` | Yuaz Learned Detail | -100..100 | 0 |
+| `YH` | Yuaz High-Band | 0 or 80..120 | 0 |
+
+`YH0` disables the learned high-band extension. Non-zero `YH` values are interpreted as the Yuaz-only crossover in hundreds of hertz.
+
+More details are in [docs/CONTROLS.md](docs/CONTROLS.md).
+
+## Voicebank inspection
+
+```bash
+./inspect-voicebank.command
+```
+
+## Loudness settings
+
+```bash
+./loudness-settings.command
+```
+
+## License
+
+Source code in this repository is provided under the MIT License. Yuaz SGR code, checkpoints, datasets, and other third-party components have their own terms.

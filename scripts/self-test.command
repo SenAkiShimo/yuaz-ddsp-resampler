@@ -21,6 +21,8 @@ from yuaz_ddsp_resampler.articulation import (
     save_canonical_articulation, single_source_articulation_hybrid, transfer_articulation_trajectory,
 )
 from yuaz_ddsp_resampler.adapter import VoicebankAdapter, load_adapter, save_adapter
+from yuaz_ddsp_resampler.controls import parse_yuaz_controls
+from yuaz_ddsp_resampler.learned_highband import synthesize_learned_highband, select_learned_profile
 from yuaz_ddsp_resampler.fidelity import TinyFidelityRefiner, load_refiner, save_refiner
 from yuaz_ddsp_resampler.loudness import active_rms_dbfs, normalize_final_render
 from yuaz_ddsp_resampler.prepare import timbre_perturb_audio, content_consistency_loss
@@ -31,6 +33,50 @@ assert tone_to_midi("G4") == 67
 assert tone_to_midi("C5") == 72
 assert decode_int12_pitch("AA").tolist() == [0.0]
 assert decode_int12_pitch("//").tolist() == [-1.0]
+assert parse_yuaz_controls("").timbre_shift_semitones == 0.0
+assert parse_yuaz_controls("").highband_enabled is False
+assert parse_yuaz_controls("").highband_yuaz_only_hz == 12000.0
+assert parse_yuaz_controls("YH80").highband_yuaz_only_hz == 8000.0
+assert parse_yuaz_controls("YH120").highband_yuaz_only_hz == 12000.0
+assert parse_yuaz_controls("YH0").highband_enabled is False
+assert parse_yuaz_controls("YM0YD0").detail_strength == 1.0
+assert parse_yuaz_controls("g-10YM50YD-50").timbre_shift_semitones == 6.0
+assert parse_yuaz_controls("g-10YM50YD-50").detail_strength == 0.5
+assert parse_yuaz_controls("YD100").detail_strength == 1.5
+
+hb_sr = 44100
+hb_t = np.arange(hb_sr, dtype=np.float32) / hb_sr
+hb_gen = (0.16 * np.sin(2 * np.pi * 1000.0 * hb_t) + 0.015 * np.sin(2 * np.pi * 9000.0 * hb_t)).astype(np.float32)
+hb_profile = {
+    "band_centers_hz": [9000.0, 11000.0, 13000.0, 15000.0, 17000.0, 19000.0],
+    "voiced_db_to_full": [-28.0, -29.0, -30.0, -31.0, -33.0, -35.0],
+    "unvoiced_db_to_full": [-24.0, -25.0, -27.0, -29.0, -31.0, -33.0],
+    "voiced_harmonic_mix": 0.78,
+}
+hb_f0 = np.full(100, 220.0, dtype=np.float32)
+hb_profile["temporal"] = {"fixed_bins":16,"tail_bins":32,"low_delta_db":[0.0]*16+[6.0]*32,"upper_delta_db":[0.0]*16+[9.0]*32,"harmonic_mix":[0.65]*48,"voicing":[1.0]*48}
+hb_out, hb_stats = synthesize_learned_highband(hb_gen, hb_sr, hb_f0, hb_profile, 1234, assist_start_hz=10000.0, detail_strength=1.0, target_fixed_ms=500.0)
+assert hb_stats.get("temporal_used") is True
+assert hb_stats.get("temporal_upper_peak_gain",1.0) > 1.5
+
+def _band_energy(x, lo, hi):
+    spec = np.fft.rfft(np.asarray(x, dtype=np.float64) * np.hanning(len(x)))
+    freq = np.fft.rfftfreq(len(x), 1.0 / hb_sr)
+    mask = (freq >= lo) & (freq < hi)
+    return float(np.mean(np.abs(spec[mask]) ** 2))
+
+assert hb_stats["used"] is True
+assert hb_stats["harmonic_count"] > 0
+assert _band_energy(hb_out, 12000.0, 20000.0) > _band_energy(hb_gen, 12000.0, 20000.0) * 100.0
+hb_low, _ = synthesize_learned_highband(hb_gen, hb_sr, hb_f0, hb_profile, 1234, assist_start_hz=10000.0, detail_strength=0.0, target_fixed_ms=500.0)
+assert _band_energy(hb_out, 12000.0, 20000.0) > _band_energy(hb_low, 12000.0, 20000.0) * 1.8
+fake_db = {"groups": {"a": {"prototypes": [
+    {"subbank_index":0,"anchor_midi":60.0,"voiced_db_to_full":[-30]*6,"unvoiced_db_to_full":[-28]*6,"voiced_harmonic_mix":0.6},
+    {"subbank_index":1,"anchor_midi":72.0,"voiced_db_to_full":[-18]*6,"unvoiced_db_to_full":[-20]*6,"voiced_harmonic_mix":0.8},
+]}}}
+lo_profile = select_learned_profile(fake_db, "a", 60.0, -6.0, 0)
+hi_profile = select_learned_profile(fake_db, "a", 60.0, 12.0, 0)
+assert hi_profile["voiced_db_to_full"][3] > lo_profile["voiced_db_to_full"][3]
 x = np.arange(1000, dtype=np.float32)
 assert len(crop_oto(x, 1000, 100, 200)) == 700
 source = np.ones(100, dtype=np.float32) * 220
@@ -218,6 +264,13 @@ assert torch.isfinite(inv) and torch.isfinite(anchor)
 weights = adapter._pitch_weights(f0, batch=1, source_prototype_index=2)
 assert weights.shape == (1, 4)
 assert int(torch.argmax(weights, dim=1)[0]) == 2
+weights_up = adapter._pitch_weights(f0, batch=1, source_prototype_index=2, timbre_shift_semitones=12.0)
+weights_down = adapter._pitch_weights(f0, batch=1, source_prototype_index=2, timbre_shift_semitones=-12.0)
+assert float((weights_up - weights).abs().sum()) > 1e-4
+assert float((weights_down - weights).abs().sum()) > 1e-4
+base_latent = adapter.apply_latent(z, detail=detail, f0=f0, source_prototype_index=2)
+zero_latent = adapter.apply_latent(z, detail=detail, f0=f0, source_prototype_index=2, timbre_shift_semitones=0.0, detail_strength=1.0)
+assert torch.equal(base_latent, zero_latent)
 
 refiner = TinyFidelityRefiner()
 wave = torch.randn(1, 1, 8192) * 0.05
@@ -260,5 +313,5 @@ with tempfile.TemporaryDirectory() as td:
     rloaded, rmeta = load_refiner(rpath)
     assert rloaded.detail_dim == 25
     assert rmeta["loaded_refiner_format"] == 2
-print("Canonical articulation + timbre separation + strict normalization self-test OK")
+print("Native controls + Learned High-Band v3 continuity trajectories + articulation + normalization self-test OK")
 PY

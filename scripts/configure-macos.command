@@ -36,8 +36,8 @@ config = {
     "yuaz_repo": str(Path(sys.argv[1]).resolve()),
     "checkpoint": str(Path(sys.argv[2]).resolve()),
     "host": "127.0.0.1",
-    "port": 47860,
-    "engine_version": "0.2.7-alpha.1",
+    "port": 47871,
+    "engine_version": "0.2.7-alpha.8-rc.3.2",
     "transition_ms": 70.0,
     "use_rvq": False,
     "output_sr": 44100,
@@ -47,6 +47,7 @@ config = {
     "normalization_peak_guard_knee_db": 3.0,
     "normalization_emergency_max_abs_gain_db": 30.0,
     "normalization_tolerance_db": 0.05,
+    "enable_fidelity_refiner": False,
     "registry_path": str((Path.cwd() / "voicebank_registry.json").resolve()),
 }
 Path("config.json").write_text(json.dumps(config, indent=2), encoding="utf-8")

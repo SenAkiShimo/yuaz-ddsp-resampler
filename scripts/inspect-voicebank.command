@@ -15,7 +15,7 @@ python3 - "$BANK" <<'PY'
 import json, sys
 from pathlib import Path
 bank=Path(sys.argv[1])
-y=bank/'.yuaz'
+y=bank/'.yuaz-alpha8-rc3-2'
 sub=y/'subbanks.json'
 if sub.exists():
     data=json.loads(sub.read_text(encoding='utf-8'))
@@ -64,7 +64,7 @@ if profile_path.exists():
     print('  median_confidence:', profile.get('median_articulation_confidence'))
     print('  cache_format:', profile.get('cache_format'))
     print()
-for name in ('subbanks.json','loudness.json','profile.json','training.json','fidelity_training.json'):
+for name in ('subbanks.json','loudness.json','profile.json','training.json','clarity_calibration.json','fidelity_training.json'):
     p=y/name
     print(f'--- {name} ---')
     if p.exists():

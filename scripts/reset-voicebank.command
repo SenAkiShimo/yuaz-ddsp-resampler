@@ -29,8 +29,8 @@ if registry.exists():
     samples=data.get('samples',{})
     data['samples']={k:v for k,v in samples.items() if Path(v.get('voicebank_root','')).expanduser().resolve()!=bank}
     registry.write_text(json.dumps(data,indent=2,ensure_ascii=False),encoding='utf-8')
-y=bank/'.yuaz'
+y=bank/'.yuaz-alpha8-rc3-2'
 if y.exists():
     shutil.rmtree(y)
-print(f'Removed adaptation data for: {bank}')
+print(f'Removed alpha.8 RC3.2 adaptation data for: {bank}')
 PY

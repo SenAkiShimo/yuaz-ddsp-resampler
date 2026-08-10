@@ -1,4 +1,4 @@
 #!/bin/bash
 set -e
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-exec "$ROOT/scripts/fidelity-test.command" "$@"
+exec "$ROOT/scripts/learn-highband.command" "$@"
