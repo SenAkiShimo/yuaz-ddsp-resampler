@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "acoustic_source_release": "0.2.7-alpha.8-rc.4.0",
+  "unchanged_modules": {
+    "src/yuaz_ddsp_resampler/articulation.py": "5223ffe1ef9ee0cfbc69336691256896492a6b5328ce98f2639ccd0b50ede368",
+    "src/yuaz_ddsp_resampler/loudness.py": "6d0045bbc13508866b07a2e503dd9f4a0173d5578d14d67414bd3332b4a1ae8e"
+  },
+  "note": "0.2.8ai.13 uses a 24 kHz analysis path, 48 kHz synthesis, a wide slope-continuous upper-band crossover, output-rate-aware terminal shaping, and preserved compatibility fallbacks.",
+  "intentionally_changed_modules": {
+    "src/yuaz_ddsp_resampler/learned_highband.py": "aee986e936fe2942648e02d81aa8c5e629aa727465abad671f12d4341dad66e1",
+    "src/yuaz_ddsp_resampler/highband_foundation.py": "43d5721407be6725dbe665d398bc63f40297ce127c0af2816fb1e630f804abe6",
+    "src/yuaz_ddsp_resampler/core.py": "ec5b467b1d94210395706be5a467f4a2462fcaf3e799486d69b99249f51a1018",
+    "src/yuaz_ddsp_resampler/highband_training.py": "0b37d5bc04901911391a474862a57d107714067d476c05e036c65ea49d17d9f6",
+    "src/yuaz_ddsp_resampler/upperband_head.py": "957edc5a33a1dc7c741b5837071b5cc28acb3b960bb2cb708db2e3c9dd6564c2",
+    "src/yuaz_ddsp_resampler/upperband_guard.py": "1888e35b934c36412186d0d460dde70181b9437c47c2952c4d2ff7544724590f",
+    "src/yuaz_ddsp_resampler/state.py": "35d8eec2db69ba1c5a9ce75bb207e8e5227bdfd9d7f058377ee09d698b667855",
+    "src/yuaz_ddsp_resampler/server.py": "57ff0b314f40f7e9b9783a6a5e4ca65bf4f796dfc8da0a2b23f4b093d62c2fe4"
+  }
+}

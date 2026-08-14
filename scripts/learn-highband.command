@@ -1,37 +1,19 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-if [ ! -x .venv/bin/python ]; then
-  echo "Run scripts/setup-macos.command first."
-  exit 1
-fi
-if [ ! -f config.json ]; then
-  echo "Run scripts/configure-macos.command first."
-  exit 1
-fi
-strip_path() {
-  python3 - "$1" <<'PY2'
-import shlex, sys
-parts=shlex.split(sys.argv[1].strip())
-print(parts[0] if parts else '')
-PY2
+[ -x .venv/bin/python ] || { echo "Run setup-macos.command first."; exit 1; }
+[ -f config.json ] || { echo "Run configure-macos.command first."; exit 1; }
+strip_path() { python3 - "$1" <<'PY'
+import shlex,sys
+p=shlex.split(sys.argv[1].strip()); print(p[0] if p else '')
+PY
 }
-echo "Drop the alpha.8 prepared voicebank root here, then press Return:"
+echo "Drop the prepared voicebank root here, then press Return:"
 read -r RAW
 BANK="$(strip_path "$RAW")"
-if [ ! -f "$BANK/.yuaz-alpha8-rc3-2/manifest.json" ]; then
-  echo "No .yuaz-alpha8-rc3-2/manifest.json found. Run Prepare Voicebank first."
-  exit 1
-fi
-echo
-echo "Relearn High-Band from source WAVs?"
-echo "  1) Force re-analysis (recommended when old high-band state is suspect)"
-echo "  2) Reuse valid alpha.8 high-band cache"
-read -r MODE
+[ -d "$BANK" ] || { echo "Voicebank folder not found: $BANK"; exit 1; }
+echo "0.2.8ai.13 will rebuild this voicebank high-band profile and pin highband_foundation-v2.pt when available, otherwise reuse v1."
+echo "The active sound will switch only after validation succeeds. No Deep retraining is required."
 export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
-if [ "$MODE" = "1" ]; then
-  exec "$ROOT/.venv/bin/python" -m yuaz_ddsp_resampler.learn_highband "$BANK" --project-root "$ROOT" --force
-else
-  exec "$ROOT/.venv/bin/python" -m yuaz_ddsp_resampler.learn_highband "$BANK" --project-root "$ROOT"
-fi
+exec "$ROOT/.venv/bin/python" -m yuaz_ddsp_resampler.transaction "$BANK" --project-root "$ROOT" --mode highband

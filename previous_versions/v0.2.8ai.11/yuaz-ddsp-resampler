@@ -1,0 +1,9 @@
+#!/bin/bash
+set -e
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ ! -x "$ROOT/.venv/bin/python" ]; then
+  echo "Yuaz DDSP Resampler: run scripts/setup-macos.command first." >&2
+  exit 1
+fi
+export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
+exec "$ROOT/.venv/bin/python" -m yuaz_ddsp_resampler.client "$@"

@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "acoustic_source_release": "0.2.7-alpha.8-rc.4.0",
+  "unchanged_modules": {
+    "src/yuaz_ddsp_resampler/articulation.py": "5223ffe1ef9ee0cfbc69336691256896492a6b5328ce98f2639ccd0b50ede368",
+    "src/yuaz_ddsp_resampler/loudness.py": "6d0045bbc13508866b07a2e503dd9f4a0173d5578d14d67414bd3332b4a1ae8e"
+  },
+  "note": "0.2.8ai.12 preserves the complete ai.11 source package and its fallback synthesis/mixer, keeps the 24 kHz neural analysis/latent path, and adds a frequency-dependent upper-band parameter head plus band-wise 48 kHz crossover. YH/Foundation remains optional refinement.",
+  "intentionally_changed_modules": {
+    "src/yuaz_ddsp_resampler/learned_highband.py": "a1a6b54cafc49d3df31c0fdc7ca4197b1a9ed586f1f81f4a3a2cd26c690ffc00",
+    "src/yuaz_ddsp_resampler/highband_foundation.py": "43d5721407be6725dbe665d398bc63f40297ce127c0af2816fb1e630f804abe6",
+    "src/yuaz_ddsp_resampler/core.py": "445b6afbf91738ec913e4403438e0bd71efee31d6566e536cbdaa19f6f65fd18",
+    "src/yuaz_ddsp_resampler/highband_training.py": "0b37d5bc04901911391a474862a57d107714067d476c05e036c65ea49d17d9f6",
+    "src/yuaz_ddsp_resampler/upperband_head.py": "957edc5a33a1dc7c741b5837071b5cc28acb3b960bb2cb708db2e3c9dd6564c2",
+    "src/yuaz_ddsp_resampler/state.py": "60a0023286b59f31e60d51d7bd47a589ec16239741d4c360510d62653b33b943",
+    "src/yuaz_ddsp_resampler/server.py": "c77b033c6202669ec854041f111c3e13fe06c5a5c742301398b1c251426b1799"
+  }
+}

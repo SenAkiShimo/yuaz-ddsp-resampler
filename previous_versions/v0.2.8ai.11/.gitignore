@@ -1,0 +1,16 @@
+.venv/
+config.json
+logs/
+tone-test-output/
+.engine-start.lock
+__pycache__/
+*.pyc
+*.pt
+*.pth
+*.ckpt
+*.wav
+.DS_Store
+voicebank_registry.json
+*.lock
+logs/
+*.log

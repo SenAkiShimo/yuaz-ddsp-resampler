@@ -1,0 +1,15 @@
+{
+  "format": 1,
+  "acoustic_source_release": "0.2.7-alpha.8-rc.4.0",
+  "unchanged_modules": {
+    "src/yuaz_ddsp_resampler/articulation.py": "5223ffe1ef9ee0cfbc69336691256896492a6b5328ce98f2639ccd0b50ede368",
+    "src/yuaz_ddsp_resampler/loudness.py": "6d0045bbc13508866b07a2e503dd9f4a0173d5578d14d67414bd3332b4a1ae8e"
+  },
+  "note": "0.2.8ai.11 keeps articulation/loudness hash-protected, preserves the 24 kHz neural analysis/latent path, and adds a 48 kHz harmonic/noise DDSP synthesis body with complementary full-band crossover. YH/Foundation remains an optional refinement layer.",
+  "intentionally_changed_modules": {
+    "src/yuaz_ddsp_resampler/learned_highband.py": "7f0790d58910a2d9d2bdb70c26e4bb91c8b81a63055063b5404e947a68a82896",
+    "src/yuaz_ddsp_resampler/highband_foundation.py": "43d5721407be6725dbe665d398bc63f40297ce127c0af2816fb1e630f804abe6",
+    "src/yuaz_ddsp_resampler/core.py": "cfee4b84a39d3f19398e906a7420b5e508877180cf6d69b0dbb3fd1fafdd9bac",
+    "src/yuaz_ddsp_resampler/highband_training.py": "0b37d5bc04901911391a474862a57d107714067d476c05e036c65ea49d17d9f6"
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "format": 1,
+  "datasets": [
+    {
+      "id": "gtsinger",
+      "name": "GTSinger",
+      "role": "primary paired singing-technique corpus",
+      "techniques": [
+        "breathy",
+        "falsetto",
+        "mixed_voice",
+        "pharyngeal"
+      ],
+      "source": "https://huggingface.co/datasets/GTSinger/GTSinger",
+      "code": "https://github.com/AaronZ345/GTSinger",
+      "license": "CC BY-NC-SA 4.0",
+      "bundled": false
+    },
+    {
+      "id": "vocalset",
+      "name": "VocalSet",
+      "role": "extended-technique corpus and validation",
+      "techniques": [
+        "breathy",
+        "belt",
+        "vocal_fry"
+      ],
+      "source": "https://zenodo.org/records/1193957",
+      "license": "check the selected Zenodo record/version before redistribution",
+      "bundled": false
+    },
+    {
+      "id": "vocal_mode_2026",
+      "name": "A Dataset for Automatic Vocal Mode Classification",
+      "role": "tension/phonation-mode calibration",
+      "techniques": [
+        "neutral",
+        "curbing",
+        "overdrive",
+        "edge"
+      ],
+      "source": "https://zenodo.org/records/14276415",
+      "size": "1.4 GB",
+      "license": "verify Zenodo rights metadata/readme before redistribution",
+      "bundled": false
+    },
+    {
+      "id": "annotated_vocalset",
+      "name": "Annotated VocalSet",
+      "role": "note-aligned VocalSet metadata",
+      "techniques": [
+        "breathy",
+        "belt",
+        "vocal_fry"
+      ],
+      "source": "https://zenodo.org/records/7061507",
+      "bundled": false
+    },
+    {
+      "id": "tal",
+      "name": "TaL Corpus",
+      "role": "future articulatory mouth/resonance research",
+      "techniques": [
+        "lip_aperture",
+        "lip_rounding",
+        "tongue_shape"
+      ],
+      "source": "https://ultrasuite.github.io/data/tal_corpus/",
+      "license": "CC BY-NC 4.0",
+      "bundled": false
+    }
+  ]
+}

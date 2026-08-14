@@ -1,16 +1,33 @@
+# Python
 .venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local runtime state
 config.json
 logs/
-tone-test-output/
+*.log
+*.lock
+*.pid
 .engine-start.lock
-__pycache__/
-*.pyc
+voicebank_registry*.json
+
+# Generated audio and test output
+*.wav
+*.flac
+tone-test-output/
+
+# Model checkpoints
 *.pt
 *.pth
 *.ckpt
-*.wav
+
+# macOS / editors
 .DS_Store
-voicebank_registry.json
-*.lock
-logs/
-*.log
+.idea/
+.vscode/
+
+# Temporary files
+*.tmp
+*.part

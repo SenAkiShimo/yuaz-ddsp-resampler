@@ -1,6 +1,11 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 DEST="$HOME/Library/OpenUtau/Resamplers"
-rm -f "$DEST/Yuaz-DDSP-Resampler-v0.2.7-alpha.8-rc.3.2.sh" "$DEST/Yuaz-DDSP-Resampler-v0.2.7-alpha.8-rc.3.2.yaml"
-echo "Removed only alpha.8 RC3.2 OpenUtau entries."
-echo "Other resamplers and voicebank adaptation data were preserved."
+APP="$HOME/Library/Application Support/YuazDDSP"
+VER="0.2.8ai.13"
+RUNTIME="$APP/$VER"
+[ -x "$RUNTIME/scripts/stop-engine.command" ] && "$RUNTIME/scripts/stop-engine.command" 2>/dev/null || true
+rm -f "$DEST/Yuaz-DDSP-Resampler-v$VER.sh" "$DEST/Yuaz-DDSP-Resampler-v$VER.yaml"
+rm -rf "$RUNTIME"
+echo "Removed only 0.2.8ai.13 runtime/wrapper."
+echo "0.2.8ai.5, 0.2.8ai.4, 0.2.8ai.3, 0.2.8ai.2, 0.2.8ai.1, 0.2.8ai, 0.2.7 AI.3, RC4.2, and every voicebank generation outside .yuaz-0.2.8ai13 were preserved."
