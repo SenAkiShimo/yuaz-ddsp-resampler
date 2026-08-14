@@ -27,4 +27,4 @@ cp "$OUT" "$BACKUP/ai_gender_foundation-v1-VocalSet.pt"
 echo
 echo "Gender foundation ready: $OUT"
 echo "Backup copy: $BACKUP/ai_gender_foundation-v1-VocalSet.pt"
-echo "Next: run deep-train-voicebank.command only when you want 0.2.8ai.13 to pin this pack into its own isolated generation."
+echo "Next: run deep-train-voicebank.command only when you want 0.2.8ai.14 to pin this pack into its own isolated generation."

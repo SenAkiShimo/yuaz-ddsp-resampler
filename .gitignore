@@ -12,16 +12,18 @@ logs/
 *.pid
 .engine-start.lock
 voicebank_registry*.json
+.yuaz-*/
 
 # Generated audio and test output
 *.wav
 *.flac
 tone-test-output/
 
-# Model checkpoints
+# Model checkpoints and local model registries
 *.pt
 *.pth
 *.ckpt
+models/
 
 # macOS / editors
 .DS_Store

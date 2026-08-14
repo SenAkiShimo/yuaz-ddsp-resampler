@@ -14,7 +14,7 @@ from pathlib import Path
 
 REPO_ID = "GTSinger/GTSinger"
 REVISION = "main"
-USER_AGENT = "Yuaz-DDSP-Resampler/0.2.8ai.13-technique-training"
+USER_AGENT = "Yuaz-DDSP-Resampler/0.2.8ai.14-technique-training"
 PRESETS = {
     "chinese-core": [
         "Chinese/ZH-Alto-1/Breathy/**",

@@ -1,13 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-INST="$HOME/Library/Application Support/YuazDDSP/0.2.8ai.13/logs/render_requests.jsonl"
+INST="$HOME/Library/Application Support/YuazDDSP/0.2.8ai.14/logs/render_requests.jsonl"
 LOCAL="$ROOT/logs/render_requests.jsonl"
 LOG=""
 [ -f "$INST" ] && LOG="$INST"
 [ -z "$LOG" ] && [ -f "$LOCAL" ] && LOG="$LOCAL"
 if [ -z "$LOG" ]; then
-  echo "No 0.2.8ai.13 render log yet. Render one note with YH0/YH100 first."
+  echo "No 0.2.8ai.14 render log yet. Render one note with YH0/YH100 first."
   exit 0
 fi
 python3 - "$LOG" <<'PY'
@@ -24,7 +24,7 @@ for line in p.read_text(encoding='utf-8',errors='replace').splitlines():
 if not rows:
     print('No YH render found in',p);raise SystemExit(0)
 q,r=rows[-1]
-print('Yuaz 0.2.8ai.13 latest YH routing')
+print('Yuaz 0.2.8ai.14 latest YH routing')
 print('flags:',repr(q.get('flags','')))
 print('input:',q.get('input'))
 for k in (

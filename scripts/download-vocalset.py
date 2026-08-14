@@ -14,7 +14,7 @@ from pathlib import Path
 
 REPO_ID = "Bill13579/vocalset-mirror"
 REVISION = "main"
-USER_AGENT = "Yuaz-DDSP-Resampler/0.2.8ai.13-gender-training"
+USER_AGENT = "Yuaz-DDSP-Resampler/0.2.8ai.14-gender-training"
 PRESETS = {
     "gender-core": ["data/*.parquet", "README.md"],
 }

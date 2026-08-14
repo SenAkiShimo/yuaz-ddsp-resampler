@@ -24,7 +24,7 @@ PYARROW
   fi
 fi
 
-echo "Yuaz 0.2.8ai.13 — High-Band Foundation bandwidth audit"
+echo "Yuaz 0.2.8ai.14 — High-Band Foundation bandwidth audit"
 echo "This does not download new datasets. It scans the data already on this Mac."
 echo
 echo "GTSinger:       $GTS"

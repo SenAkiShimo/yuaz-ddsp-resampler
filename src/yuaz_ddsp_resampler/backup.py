@@ -14,14 +14,14 @@ from .state import (
 )
 
 CRITICAL_HASH_NAMES = {
-    "adapter.pt", "timbre_profiles.pt", "highband_profiles_v3.json",
-    "profile.json", "training.json", "loudness.json", "manifest.json",
-    "fidelity_refiner.pt", "fidelity_training.json", "clarity_calibration.json",
-    "ai_control_adapter.pt", "ai_control_training.json", "ai_gender_adapter.pt", "ai_gender_training.json",
-    "ai_phonation_adapter.pt", "ai_phonation_training.json", "ai_mouth_adapter.pt", "ai_mouth_training.json",
+    "adapter.ai14.pt", "timbre_profiles.ai14.pt", "highband_profiles_v3.ai14.json",
+    "profile.json", "training.ai14.json", "loudness.json", "manifest.json",
+    "fidelity_refiner.ai14.pt", "fidelity_training.ai14.json", "clarity_calibration.ai14.json",
+    "ai_control_adapter.ai14.pt", "ai_control_training.ai14.json", "ai_gender_adapter.ai14.pt", "ai_gender_training.ai14.json",
+    "ai_phonation_adapter.ai14.pt", "ai_phonation_training.ai14.json", "ai_mouth_adapter.ai14.pt", "ai_mouth_training.ai14.json",
     "state_fingerprint.json", "runtime_registry.json",
 }
-EXCLUDED_CACHE_DIRS = {"cache", "highband_cache_v3", "highband_cache_v2", "highband_cache", "__pycache__"}
+EXCLUDED_CACHE_DIRS = {"cache_ai14", "highband_cache_v3_ai14", "highband_cache_v2", "highband_cache", "__pycache__"}
 
 
 def _sha256(path, chunk=1024 * 1024):
@@ -107,10 +107,10 @@ def create_backup(project_root, voicebank, reason="manual"):
     base = Path.home() / "Documents" / "Yuaz-DDSP-Backups" / _safe_name(bank.name)
     base.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")
-    dest = base / f"{stamp}-before-0.2.8ai.13-{_safe_name(reason)}"
+    dest = base / f"{stamp}-before-0.2.8ai.14-{_safe_name(reason)}"
     suffix = 1
     while dest.exists():
-        dest = base / f"{stamp}-before-0.2.8ai.13-{_safe_name(reason)}-{suffix}"
+        dest = base / f"{stamp}-before-0.2.8ai.14-{_safe_name(reason)}-{suffix}"
         suffix += 1
     dest.mkdir(parents=True, exist_ok=False)
 
@@ -127,7 +127,7 @@ def create_backup(project_root, voicebank, reason="manual"):
         if active_file.exists():
             shutil.copy2(active_file, dest / f"{label}-ACTIVE.json")
 
-    archive_state("0.2.8ai.13", ai_active, ai_info, "0.2.8ai.13-runtime-state.tar.gz", STATE_CONTAINER, include_caches=False)
+    archive_state("0.2.8ai.14", ai_active, ai_info, "0.2.8ai.14-runtime-state.tar.gz", STATE_CONTAINER, include_caches=False)
     archive_state("0.2.8ai.12", previous_028ai12_active, previous_028ai12_info, "0.2.8ai.12-active-critical.tar.gz", PREVIOUS_028AI12_STATE_CONTAINER, include_caches=False)
     archive_state("0.2.8ai.7", previous_028ai7_active, previous_028ai7_info, "0.2.8ai.7-active-critical.tar.gz", PREVIOUS_028AI7_STATE_CONTAINER, include_caches=False)
     archive_state("0.2.8ai.5", previous_028ai5_active, previous_028ai5_info, "0.2.8ai.5-active-critical.tar.gz", PREVIOUS_028AI5_STATE_CONTAINER, include_caches=False)
@@ -232,7 +232,7 @@ def create_backup(project_root, voicebank, reason="manual"):
         "previous_028ai1_container_full_archive": str(previous_028ai1_container_full) if previous_028ai1_container_full else None,
         "previous_028_container_full_archive": str(previous_028_container_full) if previous_028_container_full else None,
         "predecessor_ai_container_full_archive": str(predecessor_container_full) if predecessor_container_full else None,
-        "cache_policy": "Current 0.2.8ai.13 routine cache is excluded; predecessor 0.2.8ai.12, 0.2.8ai.7, 0.2.8ai.5, 0.2.8ai.4, 0.2.8ai.3, 0.2.8ai.2, 0.2.8ai.1, 0.2.8ai, AI.3 and RC4.2 containers are archived separately in full, including retained generations and caches",
+        "cache_policy": "Current 0.2.8ai.14 routine cache is excluded; predecessor 0.2.8ai.12, 0.2.8ai.7, 0.2.8ai.5, 0.2.8ai.4, 0.2.8ai.3, 0.2.8ai.2, 0.2.8ai.1, 0.2.8ai, AI.3 and RC4.2 containers are archived separately in full, including retained generations and caches",
         "raw_voicebank_policy": "WAV/OTO files are never modified by AI Deep; layout metadata is archived separately",
     }
     atomic_write_json(dest / "backup-manifest.json", manifest)
@@ -265,24 +265,24 @@ def restore_backup(backup_dir, voicebank, target="ai"):
             tf.extractall(bank, filter="data")
         return bank / LEGACY_STATE
     if target != "ai":
-        raise RuntimeError("0.2.8ai.13 restore only supports target=ai or rc3-2; stable RC4.2 is deliberately not modified by this branch.")
-    archive = backup_dir / "0.2.8ai.13-runtime-state.tar.gz"
+        raise RuntimeError("0.2.8ai.14 restore only supports target=ai or rc3-2; stable RC4.2 is deliberately not modified by this branch.")
+    archive = backup_dir / "0.2.8ai.14-runtime-state.tar.gz"
     if not archive.exists():
-        raise RuntimeError("Backup has no 0.2.8ai.13 state. Stable RC4.2 snapshots are read-only safety copies in this branch.")
+        raise RuntimeError("Backup has no 0.2.8ai.14 state. Stable RC4.2 snapshots are read-only safety copies in this branch.")
     generation, staging = begin_generation(bank, "restore-ai")
     temp = staging / "_extract"
     temp.mkdir()
     try:
         with tarfile.open(archive, "r:gz") as tf:
             tf.extractall(temp, filter="data")
-        src = temp / "0.2.8ai.13-state"
+        src = temp / "0.2.8ai.14-state"
         if not src.is_dir():
-            raise RuntimeError("0.2.8ai.13 backup archive is malformed.")
+            raise RuntimeError("0.2.8ai.14 backup archive is malformed.")
         for child in src.iterdir():
             shutil.move(str(child), str(staging / child.name))
         shutil.rmtree(temp)
         (staging / "runtime_registry.json").unlink(missing_ok=True)
-        final, _ = commit_generation(bank, generation, staging, reason="external-ai-backup-restore", acoustic_base="0.2.8ai.13-twelve-control-modular-ai-ddsp")
+        final, _ = commit_generation(bank, generation, staging, reason="external-ai-backup-restore", acoustic_base="0.2.8ai.14-twelve-control-modular-ai-ddsp")
         return final
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)

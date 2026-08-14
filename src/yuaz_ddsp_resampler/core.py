@@ -30,6 +30,7 @@ from .upperband_head import extend_spectral_envelope_upperband, extend_aperiodic
 from .upperband_guard import apply_upperband_spectral_guard, apply_output_rate_mix_guard, apply_output_terminal_guard_numpy, terminal_frequencies
 from .voicebank import file_sha256, pcm_fingerprint
 from .state import lookup_local_record, resolve_active_state
+from .checkpoint_identity import checkpoint_identity_sha
 
 
 B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
@@ -363,11 +364,11 @@ def make_adaptive_decoder_class(base_cls):
             }
 
         def _synthesize_fullband_body_upperband_head_v2(self, f0, S_lin, A_band, A_raw_band, gate, synthesis_sample_rate):
-            """ai.13 guarded upper-band head.
+            """Output-rate-aware upper-band synthesis with terminal guards.
 
-            The ai.12 method immediately above is preserved byte-for-byte.  ai.13
-            wraps the same learned envelope/AP extrapolation with a wider output-
-            aware transition and separate harmonic/noise terminal guards.
+            This path keeps the preceding synthesis implementation available for
+            regression fallback while applying a wider transition and separate
+            harmonic/noise guards near the output Nyquist region.
             """
             sr = int(synthesis_sample_rate)
             ratio = float(sr) / float(self.sample_rate)
@@ -1320,6 +1321,7 @@ class YuazDDSPResamplerEngine:
     def __init__(self, repo, checkpoint, transition_ms=70.0, use_rvq=False, output_sr=44100, registry_path=None, ddsp_synthesis_sr=48000, fullband_crossover_start_hz=8800.0, fullband_crossover_full_hz=12100.0, ai12_upperband_head_enabled=True, ai12_upperband_head_start_hz=8400.0, ai12_upperband_head_full_hz=12400.0, ai13_upperband_guard_enabled=True, ai13_upperband_head_start_hz=8200.0, ai13_upperband_head_full_hz=13800.0):
         self.repo = Path(repo).expanduser().resolve()
         self.checkpoint = Path(checkpoint).expanduser().resolve()
+        self.base_checkpoint_sha256 = checkpoint_identity_sha(self.checkpoint)
         self.transition_ms = float(transition_ms)
         self.use_rvq = bool(use_rvq)
         self.output_sr = int(output_sr)
@@ -1399,6 +1401,19 @@ class YuazDDSPResamplerEngine:
                     record = None
         if not record:
             return None, None, None, None
+
+        record_base_sha = str(record.get("base_checkpoint_sha256") or "")
+        if not record_base_sha:
+            raise RuntimeError(
+                "The resolved voicebank state has no ai.14 base-checkpoint provenance. "
+                "ai.14 never consumes ai.13 learned state. Run Deep with ai.14 for this voicebank."
+            )
+        if record_base_sha != self.base_checkpoint_sha256:
+            raise RuntimeError(
+                "The active ai.14 voicebank generation was trained against a different Yuaz base checkpoint. "
+                f"state={record_base_sha[:16]} current={self.base_checkpoint_sha256[:16]}. "
+                "Run ai.14 Clean Deep for the selected base model, or roll back to a matching ai.14 generation."
+            )
 
         adapter = None
         adapter_path = record.get("adapter")
@@ -1541,7 +1556,7 @@ class YuazDDSPResamplerEngine:
         return None, "not-found"
 
     def _highband_db(self, record):
-        p, source = self._resolve_record_resource(record, "highband_profiles", "highband_profiles_v3.json")
+        p, source = self._resolve_record_resource(record, "highband_profiles", "highband_profiles_v3.ai14.json")
         if p is None:
             return None, {"db_found": False, "db_source": source, "db_path": ""}
         path = str(p)
@@ -1559,7 +1574,7 @@ class YuazDDSPResamplerEngine:
         return db, {"db_found": True, "db_source": source, "db_path": path}
 
     def _highband_foundation_model(self, record):
-        p, source = self._resolve_record_resource(record, "highband_foundation", "highband_foundation.pt")
+        p, source = self._resolve_record_resource(record, "highband_foundation", "highband_foundation.ai14.pt")
         if p is None:
             for name in ("highband_foundation-v2.pt", "highband_foundation-v1.pt"):
                 candidate = self.repo / "control_models" / name

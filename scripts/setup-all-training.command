@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-echo "Yuaz 0.2.8ai.13 — Download/Resume ALL remaining learned-control data"
+echo "Yuaz 0.2.8ai.14 — Download/Resume ALL remaining learned-control data"
 echo "Existing VocalSet .part files are reused; nothing complete is downloaded twice."
 echo
 "$ROOT/scripts/setup-gender-training.command"

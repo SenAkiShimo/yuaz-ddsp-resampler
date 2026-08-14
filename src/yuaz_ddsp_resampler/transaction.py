@@ -11,6 +11,7 @@ from .learned_highband import build_profile_database, save_profile_database
 from .ai_vocal_controls import load_ai_control_adapter
 from .highband_foundation import load_highband_foundation
 from .prepare import VoicebankPreparer
+from .checkpoint_identity import checkpoint_identity_sha, checkpoint_identity
 from .state import (
     begin_generation, clone_state, commit_generation, link_analysis_caches,
     legacy_dir, merge_global_registry, resolve_active_state, resolve_stable_state, sha256,
@@ -38,7 +39,7 @@ def _safe_remove_staging(staging):
 
 def _force_highband_in_state(bank, state):
     state = Path(state)
-    cache = state / "highband_cache_v3"
+    cache = state / "highband_cache_v3_ai14"
     if cache.is_symlink():
         cache.unlink()
     elif cache.exists():
@@ -47,7 +48,7 @@ def _force_highband_in_state(bank, state):
     db = build_profile_database(
         Path(bank), manifest.get("entries") or [], model_hop=256, model_sr=24000, state_dir=state,
     )
-    out = state / "highband_profiles_v3.json"
+    out = state / "highband_profiles_v3.ai14.json"
     save_profile_database(out, db)
     return out, db
 
@@ -55,7 +56,7 @@ def _force_highband_in_state(bank, state):
 
 def _quiesce_runtime(config, phase):
     host = str(config.get("host", "127.0.0.1"))
-    port = int(config.get("port", 47885))
+    port = int(config.get("port", 47886))
     runtime_id = str(config.get("runtime_id") or ENGINE_VERSION)
     status = ping(host, port)
     if not status:
@@ -80,7 +81,7 @@ def _quiesce_runtime(config, phase):
             if not ping(host,port):
                 return
             time.sleep(0.1)
-        raise RuntimeError(f"0.2.8ai.13 engine would not stop cleanly during {phase}; ACTIVE was not changed.")
+        raise RuntimeError(f"0.2.8ai.14 engine would not stop cleanly during {phase}; ACTIVE was not changed.")
 
 
 def _find_ai_control_foundation(project_root, source_state=None):
@@ -90,7 +91,7 @@ def _find_ai_control_foundation(project_root, source_state=None):
         project_root / "control_models" / "ai_control_foundation-v2.pt",
     ]
     if source_state is not None:
-        candidates.append(Path(source_state) / "ai_control_adapter.pt")
+        candidates.append(Path(source_state) / "ai_control_adapter.ai14.pt")
     candidates.extend([
         home / "Documents" / "Yuaz-DDSP-Backups" / "control-models" / "ai_control_foundation-v2-Chinese-Core.pt",
         home / "Library" / "Application Support" / "YuazDDSP" / "0.2.7-alpha.8-rc.4.3-ai.3" / "control_models" / "ai_control_foundation-v2.pt",
@@ -114,7 +115,7 @@ def _attach_ai_control_foundation(project_root, staging, source_state=None):
     project_root = Path(project_root)
     staging = Path(staging)
     foundation = _find_ai_control_foundation(project_root, source_state=source_state)
-    meta_path = staging / "ai_control_training.json"
+    meta_path = staging / "ai_control_training.ai14.json"
     if foundation is None:
         atomic_write_json(meta_path, {
             "format": 3, "accepted": False, "backend": "deterministic-fallback",
@@ -139,7 +140,7 @@ def _attach_ai_control_foundation(project_root, staging, source_state=None):
         return None
     config = load_config(project_root)
     checkpoint = Path(config["checkpoint"]).expanduser().resolve()
-    current_checkpoint_sha = sha256(checkpoint) if checkpoint.is_file() else "missing:" + str(checkpoint)
+    current_checkpoint_sha = checkpoint_identity_sha(checkpoint) if checkpoint.is_file() else "missing:" + str(checkpoint)
     feature_backend = str(metadata.get("feature_backend") or "")
     foundation_checkpoint_sha = str(metadata.get("checkpoint_sha256") or "")
     if feature_backend != "yuaz-native-ddsp-v1":
@@ -148,7 +149,7 @@ def _attach_ai_control_foundation(project_root, staging, source_state=None):
             "reason": "foundation-not-native-yuaz-ddsp",
             "feature_backend": feature_backend, "source": str(foundation), "created_at": time.time(),
         })
-        print("AI Control Foundation rejected: 0.2.8ai.13 requires Yuaz-native DDSP training features.")
+        print("AI Control Foundation rejected: 0.2.8ai.14 requires Yuaz-native DDSP training features.")
         return None
     if not foundation_checkpoint_sha or foundation_checkpoint_sha != current_checkpoint_sha:
         atomic_write_json(meta_path, {
@@ -160,7 +161,7 @@ def _attach_ai_control_foundation(project_root, staging, source_state=None):
         })
         print("AI Control Foundation rejected: it was trained against a different Yuaz checkpoint.")
         return None
-    target = staging / "ai_control_adapter.pt"
+    target = staging / "ai_control_adapter.ai14.pt"
     shutil.copy2(foundation, target)
     atomic_write_json(meta_path, {
         "format": 3, "accepted": True, "backend": "ai-ddsp",
@@ -168,11 +169,11 @@ def _attach_ai_control_foundation(project_root, staging, source_state=None):
         "foundation_path": str(foundation.resolve()),
         "foundation_sha256": sha256(foundation),
         "foundation_metadata": metadata,
-        "migration_policy": "0.2.8ai.13 may reuse compatible frozen predecessor foundations without modifying their source",
+        "migration_policy": "0.2.8ai.14 may reuse compatible frozen predecessor foundations without modifying their source",
         "frozen_during_voicebank_deep": True,
         "created_at": time.time(),
     })
-    print(f"AI Control Foundation pinned into 0.2.8ai.13 generation from: {foundation}")
+    print(f"AI Control Foundation pinned into 0.2.8ai.14 generation from: {foundation}")
     print(f"Pinned copy: {target}")
     return target
 
@@ -182,11 +183,11 @@ def _find_ai_gender_foundation(project_root, source_state=None):
     home = Path.home()
     candidates = [project_root / "control_models" / "ai_gender_foundation-v1.pt"]
     if source_state is not None:
-        candidates.append(Path(source_state) / "ai_gender_adapter.pt")
+        candidates.append(Path(source_state) / "ai_gender_adapter.ai14.pt")
     candidates.extend([
         home / "Documents" / "Yuaz-DDSP-Backups" / "control-models" / "ai_gender_foundation-v1-VocalSet.pt",
-        home / "Library" / "Application Support" / "YuazDDSP" / "0.2.8ai.13" / "control_models" / "ai_gender_foundation-v1.pt",
-        home / "Downloads" / "yuaz-ddsp-resampler-v0.2.8ai.13" / "control_models" / "ai_gender_foundation-v1.pt",
+        home / "Library" / "Application Support" / "YuazDDSP" / "0.2.8ai.14" / "control_models" / "ai_gender_foundation-v1.pt",
+        home / "Downloads" / "yuaz-ddsp-resampler-v0.2.8ai.14" / "control_models" / "ai_gender_foundation-v1.pt",
         home / "Library" / "Application Support" / "YuazDDSP" / "0.2.8ai.11" / "control_models" / "ai_gender_foundation-v1.pt",
         home / "Downloads" / "yuaz-ddsp-resampler-v0.2.8ai.11" / "control_models" / "ai_gender_foundation-v1.pt",
         home / "Library" / "Application Support" / "YuazDDSP" / "0.2.8ai.2" / "control_models" / "ai_gender_foundation-v1.pt",
@@ -207,7 +208,7 @@ def _find_ai_gender_foundation(project_root, source_state=None):
 def _attach_ai_gender_foundation(project_root, staging, source_state=None):
     staging=Path(staging)
     foundation=_find_ai_gender_foundation(project_root, source_state=source_state)
-    meta_path=staging / "ai_gender_training.json"
+    meta_path=staging / "ai_gender_training.ai14.json"
     if foundation is None:
         atomic_write_json(meta_path, {"format":1,"accepted":False,"backend":"deterministic-fallback","reason":"no-trained-gender-foundation","created_at":time.time()})
         print("AI Gender Foundation: not found; YG keeps deterministic DDSP Gender/Formant.")
@@ -227,15 +228,15 @@ def _attach_ai_gender_foundation(project_root, staging, source_state=None):
         return None
     config=load_config(project_root)
     checkpoint=Path(config["checkpoint"]).expanduser().resolve()
-    current_sha=sha256(checkpoint) if checkpoint.is_file() else "missing:"+str(checkpoint)
+    current_sha=checkpoint_identity_sha(checkpoint) if checkpoint.is_file() else "missing:"+str(checkpoint)
     if str(metadata.get("feature_backend") or "") != "yuaz-native-ddsp-v1" or str(metadata.get("checkpoint_sha256") or "") != current_sha:
         atomic_write_json(meta_path,{"format":1,"accepted":False,"backend":"deterministic-fallback","reason":"gender-foundation-provenance-mismatch","source":str(foundation),"current_checkpoint_sha256":current_sha,"foundation_checkpoint_sha256":metadata.get("checkpoint_sha256"),"created_at":time.time()})
         print("AI Gender Foundation rejected: Yuaz checkpoint/provenance mismatch.")
         return None
-    target=staging / "ai_gender_adapter.pt"
+    target=staging / "ai_gender_adapter.ai14.pt"
     shutil.copy2(foundation,target)
     atomic_write_json(meta_path,{"format":1,"accepted":True,"backend":"ai-ddsp","direct_controls":["gender_formant"],"output_scopes":["spectral"],"foundation_path":str(foundation.resolve()),"foundation_sha256":sha256(foundation),"foundation_metadata":metadata,"frozen_during_voicebank_deep":True,"created_at":time.time()})
-    print(f"AI Gender Foundation pinned into 0.2.8ai.13 generation from: {foundation}")
+    print(f"AI Gender Foundation pinned into 0.2.8ai.14 generation from: {foundation}")
     print(f"Pinned gender copy: {target}")
     return target
 
@@ -248,7 +249,7 @@ def _find_modular_foundation(project_root, filename, backup_names=(), source_sta
         candidates.append(Path(source_state) / state_filename)
     for b in backup_names:
         candidates.append(home / "Documents" / "Yuaz-DDSP-Backups" / "control-models" / b)
-    for ver in ("0.2.8ai.13", "0.2.8ai.12", "0.2.8ai.11", "0.2.8ai.3", "0.2.8ai.2", "0.2.8ai.1", "0.2.8ai"):
+    for ver in ("0.2.8ai.14", "0.2.8ai.12", "0.2.8ai.11", "0.2.8ai.3", "0.2.8ai.2", "0.2.8ai.1", "0.2.8ai"):
         candidates.append(home / "Library" / "Application Support" / "YuazDDSP" / ver / "control_models" / filename)
         candidates.append(home / "Downloads" / f"yuaz-ddsp-resampler-v{ver}" / "control_models" / filename)
     seen=set()
@@ -285,7 +286,7 @@ def _attach_modular_foundation(project_root, staging, *, filename, target_filena
         return None
     config=load_config(project_root)
     checkpoint=Path(config["checkpoint"]).expanduser().resolve()
-    current_sha=sha256(checkpoint) if checkpoint.is_file() else "missing:"+str(checkpoint)
+    current_sha=checkpoint_identity_sha(checkpoint) if checkpoint.is_file() else "missing:"+str(checkpoint)
     foundation_sha=str(metadata.get("checkpoint_sha256") or "")
     if str(metadata.get("feature_backend") or "")!="yuaz-native-ddsp-v1" or not foundation_sha or foundation_sha!=current_sha:
         atomic_write_json(meta_path,{"format":1,"accepted":False,"backend":"deterministic-fallback","reason":"provenance-mismatch","source":str(foundation),"created_at":time.time()})
@@ -294,16 +295,16 @@ def _attach_modular_foundation(project_root, staging, *, filename, target_filena
     target=staging/target_filename
     shutil.copy2(foundation,target)
     atomic_write_json(meta_path,{"format":1,"accepted":True,"backend":"ai-ddsp","controls":list(expected_controls),"source":str(foundation.resolve()),"foundation_sha256":sha256(foundation),"foundation_metadata":metadata,"frozen_during_voicebank_deep":True,"created_at":time.time()})
-    print(f"{label} pinned into 0.2.8ai.13 generation from: {foundation}")
+    print(f"{label} pinned into 0.2.8ai.14 generation from: {foundation}")
     return target
 
 
 def _attach_ai_phonation_foundation(project_root, staging, source_state=None):
-    return _attach_modular_foundation(project_root, staging, filename="ai_phonation_foundation-v1.pt", target_filename="ai_phonation_adapter.pt", metadata_filename="ai_phonation_training.json", expected_controls=("tension","voicing"), expected_modes=("signed","signed"), expected_scopes=("spectral","ap","gate"), backup_names=("ai_phonation_foundation-v1-PhonationModes-MOCHA.pt","ai_phonation_foundation-v1-VQS-MOCHA.pt"), source_state=source_state, label="AI Phonation Foundation")
+    return _attach_modular_foundation(project_root, staging, filename="ai_phonation_foundation-v1.pt", target_filename="ai_phonation_adapter.ai14.pt", metadata_filename="ai_phonation_training.ai14.json", expected_controls=("tension","voicing"), expected_modes=("signed","signed"), expected_scopes=("spectral","ap","gate"), backup_names=("ai_phonation_foundation-v1-PhonationModes-MOCHA.pt","ai_phonation_foundation-v1-VQS-MOCHA.pt"), source_state=source_state, label="AI Phonation Foundation")
 
 
 def _attach_ai_mouth_foundation(project_root, staging, source_state=None):
-    return _attach_modular_foundation(project_root, staging, filename="ai_mouth_foundation-v1.pt", target_filename="ai_mouth_adapter.pt", metadata_filename="ai_mouth_training.json", expected_controls=("mouth",), expected_modes=("signed",), expected_scopes=("spectral",), backup_names=("ai_mouth_foundation-v1-MOCHA.pt",), source_state=source_state, label="AI Mouth Foundation")
+    return _attach_modular_foundation(project_root, staging, filename="ai_mouth_foundation-v1.pt", target_filename="ai_mouth_adapter.ai14.pt", metadata_filename="ai_mouth_training.ai14.json", expected_controls=("mouth",), expected_modes=("signed",), expected_scopes=("spectral",), backup_names=("ai_mouth_foundation-v1-MOCHA.pt",), source_state=source_state, label="AI Mouth Foundation")
 
 
 
@@ -312,14 +313,14 @@ def _find_highband_foundation(project_root, source_state=None):
     home = Path.home()
     candidates = [project_root / "control_models" / "highband_foundation-v2.pt", project_root / "control_models" / "highband_foundation-v1.pt"]
     if source_state is not None:
-        candidates.append(Path(source_state) / "highband_foundation.pt")
+        candidates.append(Path(source_state) / "highband_foundation.ai14.pt")
     candidates.extend([
-        home / "Documents" / "Yuaz-DDSP-Backups" / "control-models" / "0.2.8ai.13" / "highband_foundation-v2.pt",
-        home / "Documents" / "Yuaz-DDSP-Backups" / "control-models" / "0.2.8ai.13" / "highband_foundation-v1.pt",
-        home / "Library" / "Application Support" / "YuazDDSP" / "0.2.8ai.13" / "control_models" / "highband_foundation-v2.pt",
-        home / "Library" / "Application Support" / "YuazDDSP" / "0.2.8ai.13" / "control_models" / "highband_foundation-v1.pt",
-        home / "Downloads" / "yuaz-ddsp-resampler-v0.2.8ai.13" / "control_models" / "highband_foundation-v2.pt",
-        home / "Downloads" / "yuaz-ddsp-resampler-v0.2.8ai.13" / "control_models" / "highband_foundation-v1.pt",
+        home / "Documents" / "Yuaz-DDSP-Backups" / "control-models" / "0.2.8ai.14" / "highband_foundation-v2.pt",
+        home / "Documents" / "Yuaz-DDSP-Backups" / "control-models" / "0.2.8ai.14" / "highband_foundation-v1.pt",
+        home / "Library" / "Application Support" / "YuazDDSP" / "0.2.8ai.14" / "control_models" / "highband_foundation-v2.pt",
+        home / "Library" / "Application Support" / "YuazDDSP" / "0.2.8ai.14" / "control_models" / "highband_foundation-v1.pt",
+        home / "Downloads" / "yuaz-ddsp-resampler-v0.2.8ai.14" / "control_models" / "highband_foundation-v2.pt",
+        home / "Downloads" / "yuaz-ddsp-resampler-v0.2.8ai.14" / "control_models" / "highband_foundation-v1.pt",
         home / "Documents" / "Yuaz-DDSP-Backups" / "control-models" / "0.2.8ai.12" / "highband_foundation-v2.pt",
         home / "Documents" / "Yuaz-DDSP-Backups" / "control-models" / "0.2.8ai.12" / "highband_foundation-v1.pt",
         home / "Library" / "Application Support" / "YuazDDSP" / "0.2.8ai.12" / "control_models" / "highband_foundation-v2.pt",
@@ -346,7 +347,7 @@ def _find_highband_foundation(project_root, source_state=None):
 def _attach_highband_foundation(project_root, staging, source_state=None):
     staging = Path(staging)
     foundation = _find_highband_foundation(project_root, source_state=source_state)
-    meta_path = staging / "highband_foundation_training.json"
+    meta_path = staging / "highband_foundation_training.ai14.json"
     if foundation is None:
         atomic_write_json(meta_path, {
             "format": 1, "accepted": False, "backend": "voicebank-profile-fallback",
@@ -368,7 +369,7 @@ def _attach_highband_foundation(project_root, staging, source_state=None):
         })
         print(f"High-Band Foundation rejected: {exc}")
         return None
-    target = staging / "highband_foundation.pt"
+    target = staging / "highband_foundation.ai14.pt"
     shutil.copy2(foundation, target)
     revision = int(metadata.get("foundation_revision", 1) or 1)
     backend = str(metadata.get("runtime_backend") or f"highband-foundation-v{revision}")
@@ -382,9 +383,38 @@ def _attach_highband_foundation(project_root, staging, source_state=None):
         "frozen_during_voicebank_deep": True,
         "created_at": time.time(),
     })
-    print(f"High-Band Foundation r{revision} pinned into 0.2.8ai.13 generation from: {foundation}")
+    print(f"High-Band Foundation r{revision} pinned into 0.2.8ai.14 generation from: {foundation}")
     print(f"Pinned high-band copy: {target}")
     return target
+
+def _state_base_sha(state):
+    if state is None:
+        return ""
+    p = Path(state) / "base_model.json"
+    if not p.is_file():
+        return ""
+    try:
+        return str(json.loads(p.read_text(encoding="utf-8")).get("source_checkpoint_sha256") or "")
+    except Exception:
+        return ""
+
+
+def _write_base_model_metadata(staging, config):
+    ident = checkpoint_identity(config["checkpoint"])
+    payload = {
+        "format": 1,
+        "engine_version": "0.2.8ai.14",
+        "model_id": str(config.get("base_checkpoint_model_id") or ident["source_checkpoint_sha256"][:16]),
+        "source_checkpoint": str(config.get("base_checkpoint_source_name") or ident.get("source_checkpoint") or ""),
+        "source_checkpoint_sha256": str(config.get("base_checkpoint_sha256") or ident["source_checkpoint_sha256"]),
+        "runtime_sha256": str(config.get("base_checkpoint_runtime_sha256") or ident["runtime_sha256"]),
+        "source_step": config.get("base_checkpoint_step", ident.get("source_step")),
+        "runtime_path": str(Path(config["checkpoint"]).expanduser().resolve()),
+        "created_at": time.time(),
+    }
+    atomic_write_json(Path(staging) / "base_model.json", payload)
+    return payload
+
 
 def run_transaction(project_root, voicebank, mode):
     project_root = Path(project_root).expanduser().resolve()
@@ -395,43 +425,37 @@ def run_transaction(project_root, voicebank, mode):
     global_registry = Path(config["registry_path"]).expanduser().resolve()
 
     _quiesce_runtime(config, "preparation start")
-    backup_dir, _ = create_backup(project_root, bank, reason=f"0.2.8ai.13-{mode}")
+    backup_dir, _ = create_backup(project_root, bank, reason=f"0.2.8ai.14-{mode}")
     print(f"Safety backup completed: {backup_dir}")
 
     source, source_info = resolve_active_state(bank, allow_legacy=True, verify=True)
+    current_base_sha = str(config.get("base_checkpoint_sha256") or checkpoint_identity_sha(config["checkpoint"]))
+    source_base_sha = _state_base_sha(source)
+    source_compatible = bool(source is not None and source_base_sha and source_base_sha == current_base_sha)
     generation, staging = begin_generation(bank, mode)
     print(f"Building isolated generation: {generation}")
     print(f"Current render state remains untouched until commit: {source}")
 
     try:
         if mode == "adopt":
-            # Baseline adoption is deterministic whenever the legacy RC3.2 state exists.
-            legacy = legacy_dir(bank)
-            adopt_source = None
-            reason = None
-            if legacy.is_dir() and (legacy / "manifest.json").is_file():
-                validate_state(legacy, verify_hashes=False)
-                adopt_source = legacy
-                reason = "adopt-rc3.2-acoustic-baseline"
-            elif source is not None:
-                adopt_source = source
-                reason = "snapshot-current-baseline"
-            if adopt_source is None:
-                raise RuntimeError("No RC3.2/RC3.3 prepared state found to adopt. Use Clean Deep instead.")
-            clone_state(adopt_source, staging, link_caches=True)
+            raise RuntimeError("ai.14 does not adopt predecessor trained state. Use Clean Deep so ai.13 remains read-only and checkpoint-isolated.")
         elif mode == "deep":
-            print("Production Deep: rebuilding analysis cache from source WAVs; no learned state or cache is inherited.")
+            print("Production Deep: rebuilding ai.14 analysis and learned state from source WAVs.")
+            print("ai.13 state is never cloned, linked, renamed, or modified.")
             preparer = VoicebankPreparer(project_root, bank, "deep", state_dir=staging)
             preparer.run(register=False)
-            _attach_ai_control_foundation(project_root, staging, source_state=source)
-            _attach_ai_gender_foundation(project_root, staging, source_state=source)
-            _attach_ai_phonation_foundation(project_root, staging, source_state=source)
-            _attach_ai_mouth_foundation(project_root, staging, source_state=source)
-            _attach_highband_foundation(project_root, staging, source_state=source)
-            reason = "0.2.8ai.13-production-clean-deep-plus-modular-control-packs"
+            reusable_source = source if source_compatible else None
+            _attach_ai_control_foundation(project_root, staging, source_state=reusable_source)
+            _attach_ai_gender_foundation(project_root, staging, source_state=reusable_source)
+            _attach_ai_phonation_foundation(project_root, staging, source_state=reusable_source)
+            _attach_ai_mouth_foundation(project_root, staging, source_state=reusable_source)
+            _attach_highband_foundation(project_root, staging, source_state=reusable_source)
+            reason = "0.2.8ai.14-clean-deep-checkpoint-isolated"
         elif mode == "continue":
             if source is None:
-                raise RuntimeError("No prepared state exists to continue. Use Clean Deep instead.")
+                raise RuntimeError("No ai.14 prepared state exists to continue. Use Clean Deep instead.")
+            if not source_compatible:
+                raise RuntimeError("The active ai.14 generation was trained under another Yuaz base checkpoint. Use Clean Deep for the selected base model.")
             clone_state(source, staging, link_caches=False)
             print("Continue Deep: copied the active generation into isolated staging; no mutable cache symlinks are used.")
             preparer = VoicebankPreparer(project_root, bank, "deep", state_dir=staging)
@@ -441,10 +465,12 @@ def run_transaction(project_root, voicebank, mode):
             _attach_ai_phonation_foundation(project_root, staging, source_state=source)
             _attach_ai_mouth_foundation(project_root, staging, source_state=source)
             _attach_highband_foundation(project_root, staging, source_state=source)
-            reason = "continue-0.2.8ai.13-deep-isolated-copy-plus-modular-control-packs"
+            reason = "continue-0.2.8ai.14-deep-isolated-copy-plus-modular-control-packs"
         elif mode == "highband":
             if source is None:
-                raise RuntimeError("No prepared state exists. Use Adopt RC3.2 or Clean Deep first.")
+                raise RuntimeError("No ai.14 prepared state exists. Use Clean Deep first.")
+            if not source_compatible:
+                raise RuntimeError("The active ai.14 generation belongs to another base checkpoint. Use Clean Deep first.")
             clone_state(source, staging, link_caches=True)
             _force_highband_in_state(bank, staging)
             _attach_highband_foundation(project_root, staging, source_state=source)
@@ -454,9 +480,11 @@ def run_transaction(project_root, voicebank, mode):
 
         # Do not switch acoustic generations while OpenUtau is rendering. If the
         # engine restarted during a long training job, quiesce it again now.
+        base_meta = _write_base_model_metadata(staging, config)
+        print(f"Pinned ai.14 base provenance: {base_meta['source_checkpoint_sha256'][:16]} step={base_meta.get('source_step')}")
         _quiesce_runtime(config, "ACTIVE commit")
         final, active = commit_generation(
-            bank, generation, staging, reason=reason, acoustic_base="0.2.8ai.13-twelve-control-modular-ai-ddsp",
+            bank, generation, staging, reason=reason, acoustic_base="0.2.8ai.14-checkpoint-isolated-twelve-control-ddsp",
         )
         print(f"Committed ACTIVE generation: {final}")
         print(f"Previous generation retained for automatic rollback: {active.get('previous_generation')}")

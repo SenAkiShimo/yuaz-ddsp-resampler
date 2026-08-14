@@ -26,7 +26,7 @@ apf=torch.linspace(.08,.32,16).view(1,16,1)
 AP=(apf*(1.0+0.08*torch.sin(time))).expand(1,16,T).contiguous().clamp(.02,.8)
 G=torch.full((1,1,T),.72)
 F0=torch.full((1,1,T),220.)
-print('Yuaz 0.2.8ai.13 learned-control effect probe')
+print('Yuaz 0.2.8ai.14 learned-control effect probe')
 all_ok=True
 for filename,names in expected:
  p=cm/filename
@@ -49,5 +49,5 @@ for filename,names in expected:
    if status!='PASS': all_ok=False
    sign='+' if value>0 else '-'
    print(f'  {name:14s} {sign}100 raw={raw:.6f} applied={applied:.6f} gain={st.get("runtime_gain",1):.2f} {status}')
-print('\nRESULT:', 'learned residuals are non-zero' if all_ok else 'one or more packs are missing/collapsed; 0.2.8ai.13 carrier fallback remains active')
+print('\nRESULT:', 'learned residuals are non-zero' if all_ok else 'one or more packs are missing/collapsed; 0.2.8ai.14 carrier fallback remains active')
 PY

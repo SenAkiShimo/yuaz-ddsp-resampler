@@ -1,4 +1,4 @@
-# AI Gender/Formant training — 0.2.8ai.13
+# AI Gender/Formant training — 0.2.8ai.14
 
 This developer pipeline trains a small, bundle-ready `ai_gender_foundation-v1.pt` for `YG`.
 
@@ -45,4 +45,4 @@ A second copy is written to:
 ~/Documents/Yuaz-DDSP-Backups/control-models/ai_gender_foundation-v1-VocalSet.pt
 ```
 
-When a compatible pack is present, a later `deep-train-voicebank.command` copies and pins it into the isolated 0.2.8ai.13 generation as `ai_gender_adapter.pt`. The source `.pt` is never modified.
+When a compatible pack is present, a later `deep-train-voicebank.command` copies and pins it into the isolated 0.2.8ai.14 generation as `ai_gender_adapter.ai14.pt`. The source `.pt` is never modified.

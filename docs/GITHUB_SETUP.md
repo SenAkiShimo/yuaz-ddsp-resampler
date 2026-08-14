@@ -1,35 +1,34 @@
 # GitHub release setup
 
-Recommended repository name:
-
-```text
-yuaz-ddsp-resampler
-```
-
 Recommended release tag and title:
 
 ```text
-v0.2.8ai.13
-Yuaz DDSP Resampler v0.2.8ai.13
+v0.2.8ai.14
+Yuaz DDSP Resampler v0.2.8ai.14
 ```
 
-## Public repository contents
+## Repository contents
 
-Commit source code, scripts, documentation, lock files, manifests required by the runtime, and preserved source snapshots under `previous_versions/`.
+Commit source code, scripts, documentation, lock files, runtime manifests, and preserved source snapshots under `previous_versions/`.
 
-Do not commit generated local state such as `.venv`, `config.json`, logs, voicebank `.yuaz-*` directories, rendered WAV files, or global registry caches.
+Do not commit generated local state, including:
 
-Trained checkpoints are ignored by default. Publish weights separately only when their provenance and redistribution terms are documented.
+- `.venv/`;
+- `config.json`;
+- logs and PID/lock files;
+- `.yuaz-*` voicebank state;
+- rendered audio;
+- base-model or learned-model checkpoints.
 
-## Suggested first push
+Checkpoint files are ignored by default. Publish a model separately only when its provenance and redistribution terms are documented and permit redistribution.
+
+## Release verification
+
+Before tagging a release:
 
 ```bash
-git init
-git add .
-git commit -m "Release v0.2.8ai.13"
-git branch -M main
-git remote add origin <your-repository-url>
-git push -u origin main
+chmod +x *.command scripts/*.command yuaz-ddsp-resampler
+./self-test.command
 ```
 
-Create the release from tag `v0.2.8ai.13` after CI and local self-tests pass.
+Also run the macOS setup/configuration/doctor path on a clean or isolated runtime when possible.

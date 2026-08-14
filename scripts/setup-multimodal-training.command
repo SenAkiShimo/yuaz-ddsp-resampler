@@ -7,7 +7,7 @@ MOCHA="$DATA_ROOT/MOCHA-TIMIT"
 PYTHON="$ROOT/.venv/bin/python"
 [ -x "$PYTHON" ] || { echo "Run setup-macos.command first."; exit 1; }
 
-echo "Yuaz 0.2.8ai.13 — Tension / Voicing / Mouth Developer Data"
+echo "Yuaz 0.2.8ai.14 — Tension / Voicing / Mouth Developer Data"
 echo "All downloads are resumable (.part + HTTP Range). Official overseas sources may be used with VPN."
 echo
 echo "OSF Phonation Modes — YT Tension (breathy / neutral-modal / pressed singing)"

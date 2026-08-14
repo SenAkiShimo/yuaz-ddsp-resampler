@@ -6,7 +6,8 @@ LOCKFILE="$ROOT/requirements.lock.txt"
 [ -f "$LOCKFILE" ] || { echo "requirements.lock.txt not found."; exit 1; }
 HASH="$(shasum -a 256 "$LOCKFILE" | awk '{print substr($1,1,16)}')"
 APP="$HOME/Library/Application Support/YuazDDSP"
-ENVROOT="$APP/environments/0.2.8ai.13-$HASH"
+ENVROOT="$APP/environments/0.2.8ai.14-$HASH"
+PREV_ENV13="$APP/environments/0.2.8ai.13-$HASH"
 PREV_ENV12="$APP/environments/0.2.8ai.12-$HASH"
 PREV_ENV11="$APP/environments/0.2.8ai.11-$HASH"
 PREV_ENV10="$APP/environments/0.2.8ai.10-$HASH"
@@ -36,7 +37,10 @@ except Exception as exc:
  raise SystemExit(1)
 PY
 }
-if [ ! -x "$ENVROOT/bin/python" ] && [ -x "$PREV_ENV12/bin/python" ] && verify_env "$PREV_ENV12"; then
+if [ ! -x "$ENVROOT/bin/python" ] && [ -x "$PREV_ENV13/bin/python" ] && verify_env "$PREV_ENV13"; then
+  ENVROOT="$PREV_ENV13"
+  echo "Reusing compatible 0.2.8ai.13 pinned environment: $ENVROOT"
+elif [ ! -x "$ENVROOT/bin/python" ] && [ -x "$PREV_ENV12/bin/python" ] && verify_env "$PREV_ENV12"; then
   ENVROOT="$PREV_ENV12"
   echo "Reusing compatible 0.2.8ai.12 pinned environment: $ENVROOT"
 elif [ ! -x "$ENVROOT/bin/python" ] && [ -x "$PREV_ENV11/bin/python" ] && verify_env "$PREV_ENV11"; then

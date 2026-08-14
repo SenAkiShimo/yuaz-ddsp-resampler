@@ -11,8 +11,9 @@ from pathlib import Path
 from .loudness import oto_loudness_signature
 from .voicebank import file_sha256, pcm_fingerprint, voicebank_id
 
-ENGINE_VERSION = "0.2.8ai.13"
-STATE_CONTAINER = ".yuaz-0.2.8ai13"
+ENGINE_VERSION = "0.2.8ai.14"
+STATE_CONTAINER = ".yuaz-0.2.8ai14"
+PREVIOUS_028AI13_STATE_CONTAINER = ".yuaz-0.2.8ai13"
 PREVIOUS_028AI12_STATE_CONTAINER = ".yuaz-0.2.8ai12"
 PREVIOUS_028AI11_STATE_CONTAINER = ".yuaz-0.2.8ai11"
 PREVIOUS_028AI10_STATE_CONTAINER = ".yuaz-0.2.8ai10"
@@ -89,11 +90,11 @@ def generation_dir(bank, generation):
 def _critical_files(state):
     names = [
         "profile.json", "manifest.json", "subbanks.json", "loudness.json",
-        "highband_profiles_v3.json", "highband_foundation.pt", "highband_foundation_training.json", "adapter.pt", "timbre_profiles.pt",
-        "ai_control_adapter.pt", "ai_control_training.json", "ai_gender_adapter.pt", "ai_gender_training.json",
-        "ai_phonation_adapter.pt", "ai_phonation_training.json", "ai_mouth_adapter.pt", "ai_mouth_training.json",
-        "training.json", "clarity_calibration.json", "fidelity_refiner.pt",
-        "fidelity_training.json", "deep_validation.json", "articulation/index.json",
+        "highband_profiles_v3.ai14.json", "highband_foundation.ai14.pt", "highband_foundation_training.ai14.json", "adapter.ai14.pt", "timbre_profiles.ai14.pt",
+        "ai_control_adapter.ai14.pt", "ai_control_training.ai14.json", "ai_gender_adapter.ai14.pt", "ai_gender_training.ai14.json",
+        "ai_phonation_adapter.ai14.pt", "ai_phonation_training.ai14.json", "ai_mouth_adapter.ai14.pt", "ai_mouth_training.ai14.json",
+        "training.ai14.json", "clarity_calibration.ai14.json", "fidelity_refiner.ai14.pt",
+        "fidelity_training.ai14.json", "deep_validation.ai14.json", "articulation/index.json",
     ]
     return [state / name for name in names if (state / name).is_file()]
 
@@ -105,7 +106,7 @@ def validate_state(state, verify_hashes=True):
         state / "manifest.json",
         state / "subbanks.json",
         state / "loudness.json",
-        state / "highband_profiles_v3.json",
+        state / "highband_profiles_v3.ai14.json",
         state / "articulation" / "index.json",
     ]
     missing = [str(p.relative_to(state)) for p in required if not p.is_file()]
@@ -118,41 +119,41 @@ def validate_state(state, verify_hashes=True):
     entries = manifest.get("entries") if isinstance(manifest, dict) else None
     if not isinstance(entries, list) or not entries:
         raise RuntimeError("State manifest has no usable entries.")
-    if (state / "training.json").exists():
-        training = _json(state / "training.json")
-        if not (state / "adapter.pt").is_file() or not (state / "timbre_profiles.pt").is_file():
+    if (state / "training.ai14.json").exists():
+        training = _json(state / "training.ai14.json")
+        if not (state / "adapter.ai14.pt").is_file() or not (state / "timbre_profiles.ai14.pt").is_file():
             raise RuntimeError("Training metadata exists but adapter/timbre profiles are incomplete.")
         if training.get("mode") == "deep" and int(training.get("deep_training_version", 0) or 0) >= 1:
-            deep_validation_path = state / "deep_validation.json"
+            deep_validation_path = state / "deep_validation.ai14.json"
             if not deep_validation_path.is_file():
-                raise RuntimeError("Deep training state is missing deep_validation.json; refusing activation.")
+                raise RuntimeError("Deep training state is missing deep_validation.ai14.json; refusing activation.")
             deep_validation = _json(deep_validation_path)
             if not bool(deep_validation.get("activation_safe", False)):
                 raise RuntimeError("Deep training validation did not mark this generation activation-safe.")
-    if (state / "fidelity_training.json").exists():
-        fidelity = _json(state / "fidelity_training.json")
-        if bool(fidelity.get("accepted", True)) and not (state / "fidelity_refiner.pt").is_file():
-            raise RuntimeError("Accepted Fidelity metadata exists but fidelity_refiner.pt is missing.")
-    if (state / "highband_foundation_training.json").exists():
-        meta = _json(state / "highband_foundation_training.json")
-        if bool(meta.get("accepted", False)) and not (state / "highband_foundation.pt").is_file():
-            raise RuntimeError("High-band foundation metadata is accepted but highband_foundation.pt is missing.")
-    if (state / "ai_control_training.json").exists():
-        ai_meta = _json(state / "ai_control_training.json")
-        if bool(ai_meta.get("accepted", False)) and not (state / "ai_control_adapter.pt").is_file():
-            raise RuntimeError("AI technique metadata is accepted but ai_control_adapter.pt is missing.")
-    if (state / "ai_gender_training.json").exists():
-        gender_meta = _json(state / "ai_gender_training.json")
-        if bool(gender_meta.get("accepted", False)) and not (state / "ai_gender_adapter.pt").is_file():
-            raise RuntimeError("AI gender metadata is accepted but ai_gender_adapter.pt is missing.")
-    if (state / "ai_phonation_training.json").exists():
-        meta = _json(state / "ai_phonation_training.json")
-        if bool(meta.get("accepted", False)) and not (state / "ai_phonation_adapter.pt").is_file():
-            raise RuntimeError("AI phonation metadata is accepted but ai_phonation_adapter.pt is missing.")
-    if (state / "ai_mouth_training.json").exists():
-        meta = _json(state / "ai_mouth_training.json")
-        if bool(meta.get("accepted", False)) and not (state / "ai_mouth_adapter.pt").is_file():
-            raise RuntimeError("AI mouth metadata is accepted but ai_mouth_adapter.pt is missing.")
+    if (state / "fidelity_training.ai14.json").exists():
+        fidelity = _json(state / "fidelity_training.ai14.json")
+        if bool(fidelity.get("accepted", True)) and not (state / "fidelity_refiner.ai14.pt").is_file():
+            raise RuntimeError("Accepted Fidelity metadata exists but fidelity_refiner.ai14.pt is missing.")
+    if (state / "highband_foundation_training.ai14.json").exists():
+        meta = _json(state / "highband_foundation_training.ai14.json")
+        if bool(meta.get("accepted", False)) and not (state / "highband_foundation.ai14.pt").is_file():
+            raise RuntimeError("High-band foundation metadata is accepted but highband_foundation.ai14.pt is missing.")
+    if (state / "ai_control_training.ai14.json").exists():
+        ai_meta = _json(state / "ai_control_training.ai14.json")
+        if bool(ai_meta.get("accepted", False)) and not (state / "ai_control_adapter.ai14.pt").is_file():
+            raise RuntimeError("AI technique metadata is accepted but ai_control_adapter.ai14.pt is missing.")
+    if (state / "ai_gender_training.ai14.json").exists():
+        gender_meta = _json(state / "ai_gender_training.ai14.json")
+        if bool(gender_meta.get("accepted", False)) and not (state / "ai_gender_adapter.ai14.pt").is_file():
+            raise RuntimeError("AI gender metadata is accepted but ai_gender_adapter.ai14.pt is missing.")
+    if (state / "ai_phonation_training.ai14.json").exists():
+        meta = _json(state / "ai_phonation_training.ai14.json")
+        if bool(meta.get("accepted", False)) and not (state / "ai_phonation_adapter.ai14.pt").is_file():
+            raise RuntimeError("AI phonation metadata is accepted but ai_phonation_adapter.ai14.pt is missing.")
+    if (state / "ai_mouth_training.ai14.json").exists():
+        meta = _json(state / "ai_mouth_training.ai14.json")
+        if bool(meta.get("accepted", False)) and not (state / "ai_mouth_adapter.ai14.pt").is_file():
+            raise RuntimeError("AI mouth metadata is accepted but ai_mouth_adapter.ai14.pt is missing.")
     art = _json(state / "articulation" / "index.json")
     aliases = art.get("aliases", {}) if isinstance(art, dict) else {}
     missing_templates = 0
@@ -265,7 +266,10 @@ def _resolve_generation_container(bank, container_name, verify=True, source_labe
     return None, {"source": None, "generation": None, "active": False}
 
 def resolve_ai_state(bank, verify=True):
-    return _resolve_generation_container(bank, STATE_CONTAINER, verify=verify, source_label="0.2.8ai.13")
+    return _resolve_generation_container(bank, STATE_CONTAINER, verify=verify, source_label="0.2.8ai.14")
+
+def resolve_previous_028ai13_state(bank, verify=True):
+    return _resolve_generation_container(bank, PREVIOUS_028AI13_STATE_CONTAINER, verify=verify, source_label="0.2.8ai.13")
 
 def resolve_previous_028ai12_state(bank, verify=True):
     return _resolve_generation_container(bank, PREVIOUS_028AI12_STATE_CONTAINER, verify=verify, source_label="0.2.8ai.12")
@@ -313,108 +317,18 @@ def resolve_stable_state(bank, verify=True):
     return _resolve_generation_container(bank, STABLE_STATE_CONTAINER, verify=verify, source_label="rc4.2-stable")
 
 def resolve_active_state(bank, allow_legacy=True, verify=True):
-    # Predecessor states are read-only fallbacks until the current namespace is prepared.
+    # Learned state is version- and base-checkpoint-specific.
+    # Predecessor generations are never used as an implicit fallback.
     p, info = resolve_ai_state(bank, verify=verify)
     if p is not None:
         return p, info
-    p, info = resolve_previous_028ai12_state(bank, verify=verify)
-    if p is not None:
-        info = dict(info)
-        info["read_only_fallback"] = True
-        info["predecessor_028ai12"] = True
-        return p, info
-    p, info = resolve_previous_028ai11_state(bank, verify=verify)
-    if p is not None:
-        info = dict(info)
-        info["read_only_fallback"] = True
-        info["predecessor_028ai11"] = True
-        return p, info
-    p, info = resolve_previous_028ai10_state(bank, verify=verify)
-    if p is not None:
-        info = dict(info)
-        info["read_only_fallback"] = True
-        info["predecessor_028ai10"] = True
-        return p, info
-    p, info = resolve_previous_028ai9_state(bank, verify=verify)
-    if p is not None:
-        info = dict(info)
-        info["read_only_fallback"] = True
-        info["predecessor_028ai9"] = True
-        return p, info
-    p, info = resolve_previous_028ai8_state(bank, verify=verify)
-    if p is not None:
-        info = dict(info)
-        info["read_only_fallback"] = True
-        info["predecessor_028ai8"] = True
-        return p, info
-    p, info = resolve_previous_028ai7_state(bank, verify=verify)
-    if p is not None:
-        info = dict(info)
-        info["read_only_fallback"] = True
-        info["predecessor_028ai7"] = True
-        return p, info
-    p, info = resolve_previous_028ai6_state(bank, verify=verify)
-    if p is not None:
-        info = dict(info)
-        info["read_only_fallback"] = True
-        info["predecessor_028ai6"] = True
-        return p, info
-    p, info = resolve_previous_028ai5_state(bank, verify=verify)
-    if p is not None:
-        info = dict(info)
-        info["read_only_fallback"] = True
-        info["predecessor_028ai5"] = True
-        return p, info
-    p, info = resolve_previous_028ai4_state(bank, verify=verify)
-    if p is not None:
-        info = dict(info)
-        info["read_only_fallback"] = True
-        info["predecessor_028ai4"] = True
-        return p, info
-    p, info = resolve_previous_028ai3_state(bank, verify=verify)
-    if p is not None:
-        info = dict(info)
-        info["read_only_fallback"] = True
-        info["predecessor_028ai3"] = True
-        return p, info
-    p, info = resolve_previous_028ai2_state(bank, verify=verify)
-    if p is not None:
-        info = dict(info)
-        info["read_only_fallback"] = True
-        info["predecessor_028ai2"] = True
-        return p, info
-    p, info = resolve_previous_028ai1_state(bank, verify=verify)
-    if p is not None:
-        info = dict(info)
-        info["read_only_fallback"] = True
-        info["predecessor_028ai1"] = True
-        return p, info
-    p, info = resolve_previous_028_state(bank, verify=verify)
-    if p is not None:
-        info = dict(info)
-        info["read_only_fallback"] = True
-        info["predecessor_028"] = True
-        return p, info
-    p, info = resolve_predecessor_ai_state(bank, verify=verify)
-    if p is not None:
-        info = dict(info)
-        info["read_only_fallback"] = True
-        info["predecessor_ai"] = True
-        return p, info
-    p, info = resolve_stable_state(bank, verify=verify)
-    if p is not None:
-        info = dict(info)
-        info["read_only_fallback"] = True
-        return p, info
-    if allow_legacy:
-        legacy = legacy_dir(bank)
-        if legacy.is_dir() and (legacy / "manifest.json").is_file():
-            try:
-                validate_state(legacy, verify_hashes=False)
-                return legacy, {"source": "rc3.2-legacy", "generation": "legacy-rc3.2", "active": True, "read_only_fallback": True}
-            except Exception:
-                pass
-    return None, {"source": None, "generation": None, "active": False}
+    return None, {
+        "source": None, "generation": None, "active": False,
+        "predecessor_state_present": any((Path(bank).expanduser().resolve() / name).exists() for name in (
+            PREVIOUS_028AI13_STATE_CONTAINER, PREVIOUS_028AI12_STATE_CONTAINER, PREVIOUS_028AI11_STATE_CONTAINER,
+            PREVIOUS_028AI10_STATE_CONTAINER, PREVIOUS_028AI9_STATE_CONTAINER, STABLE_STATE_CONTAINER, LEGACY_STATE,
+        )),
+    }
 
 def begin_generation(bank, reason):
     bank = Path(bank).expanduser().resolve()
@@ -441,7 +355,7 @@ def _copy_tree_item(src, dst):
 def clone_state(source, staging, link_caches=True, skip_caches=False):
     source = Path(source)
     staging = Path(staging)
-    cache_names = {"cache", "highband_cache", "highband_cache_v2", "highband_cache_v3"}
+    cache_names = {"cache_ai14", "highband_cache", "highband_cache_v2", "highband_cache_v3_ai14"}
     for child in source.iterdir():
         if child.name in {FINGERPRINT_FILE, RUNTIME_REGISTRY}:
             continue
@@ -468,7 +382,7 @@ def link_analysis_caches(source, staging):
         return
     source = Path(source)
     staging = Path(staging)
-    for name in ("cache", "highband_cache", "highband_cache_v2", "highband_cache_v3"):
+    for name in ("cache_ai14", "highband_cache", "highband_cache_v2", "highband_cache_v3_ai14"):
         src = source / name
         dst = staging / name
         if src.exists() and not dst.exists():
@@ -544,7 +458,7 @@ def rollback_to_previous(bank):
     current = data.get("generation")
     previous = data.get("previous_generation")
     if not previous:
-        raise RuntimeError("No previous 0.2.8ai.13 generation is available to roll back to.")
+        raise RuntimeError("No previous 0.2.8ai.14 generation is available to roll back to.")
     target = generation_dir(bank, previous)
     validate_state(target, verify_hashes=True)
     payload = {
@@ -577,23 +491,31 @@ def build_registry_payload(bank, state):
     profile = manifest.get("profile") or {}
     bank_id = profile.get("voicebank_id") or voicebank_id(bank)
     loud = _state_loudness(state)
-    adapter = state / "adapter.pt"
-    refiner = state / "fidelity_refiner.pt"
-    ai_control = state / "ai_control_adapter.pt"
-    ai_gender = state / "ai_gender_adapter.pt"
-    ai_phonation = state / "ai_phonation_adapter.pt"
-    ai_mouth = state / "ai_mouth_adapter.pt"
-    highband = state / "highband_profiles_v3.json"
-    highband_foundation = state / "highband_foundation.pt"
+    adapter = state / "adapter.ai14.pt"
+    refiner = state / "fidelity_refiner.ai14.pt"
+    ai_control = state / "ai_control_adapter.ai14.pt"
+    ai_gender = state / "ai_gender_adapter.ai14.pt"
+    ai_phonation = state / "ai_phonation_adapter.ai14.pt"
+    ai_mouth = state / "ai_mouth_adapter.ai14.pt"
+    highband = state / "highband_profiles_v3.ai14.json"
+    highband_foundation = state / "highband_foundation.ai14.pt"
     articulation_index = state / "articulation" / "index.json"
     training = {}
-    if (state / "training.json").exists():
+    if (state / "training.ai14.json").exists():
         try:
-            training = _json(state / "training.json")
+            training = _json(state / "training.ai14.json")
         except Exception:
             training = {}
     generation = state.name
-    payload = {"format": 5, "voicebank_id": bank_id, "voicebank_root": str(bank), "state_generation": generation, "samples": {}}
+    base_model = {}
+    if (state / "base_model.json").is_file():
+        try:
+            base_model = _json(state / "base_model.json")
+        except Exception:
+            base_model = {}
+    payload = {"format": 6, "voicebank_id": bank_id, "voicebank_root": str(bank), "state_generation": generation,
+               "base_checkpoint_sha256": base_model.get("source_checkpoint_sha256", ""),
+               "base_checkpoint_step": base_model.get("source_step"), "samples": {}}
     samples = payload["samples"]
 
     def add_record(key, item):
@@ -606,6 +528,9 @@ def build_registry_payload(bank, state):
                 "voicebank_root": str(bank),
                 "state_generation": generation,
                 "state_path": str(state),
+                "base_checkpoint_sha256": base_model.get("source_checkpoint_sha256", ""),
+                "base_checkpoint_runtime_sha256": base_model.get("runtime_sha256", ""),
+                "base_checkpoint_step": base_model.get("source_step"),
                 "profile": str(state / "profile.json"),
                 "adapter": str(adapter) if adapter.exists() else "",
                 "refiner": str(refiner) if refiner.exists() else "",
@@ -684,12 +609,12 @@ def merge_global_registry(global_path, payload):
     lock_path = global_path.with_suffix(global_path.suffix + ".lock")
     with lock_path.open("a+") as lock:
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-        current = {"format": 5, "samples": {}}
+        current = {"format": 6, "samples": {}}
         if global_path.exists():
             try:
                 current = _json(global_path)
             except Exception:
-                current = {"format": 5, "samples": {}}
+                current = {"format": 6, "samples": {}}
         samples = current.setdefault("samples", {})
         bank_id = payload.get("voicebank_id")
         bank_root = payload.get("voicebank_root")
@@ -698,7 +623,7 @@ def merge_global_registry(global_path, payload):
             if isinstance(value, dict) and (value.get("voicebank_id") == bank_id or value.get("voicebank_root") == bank_root):
                 samples.pop(key, None)
         samples.update(payload.get("samples") or {})
-        current["format"] = 5
+        current["format"] = 6
         current["updated_at"] = time.time()
         atomic_write_json(global_path, current)
         fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
@@ -709,7 +634,7 @@ def find_voicebank_for_input(input_path, max_levels=10):
     p = Path(input_path).expanduser().resolve()
     cur = p.parent
     for _ in range(max_levels):
-        if any((cur / x).exists() for x in (STATE_CONTAINER, PREVIOUS_028AI12_STATE_CONTAINER, PREVIOUS_028AI11_STATE_CONTAINER, PREVIOUS_028AI10_STATE_CONTAINER, PREVIOUS_028AI9_STATE_CONTAINER, PREVIOUS_028AI8_STATE_CONTAINER, PREVIOUS_028AI7_STATE_CONTAINER, PREVIOUS_028AI6_STATE_CONTAINER, PREVIOUS_028AI5_STATE_CONTAINER, PREVIOUS_028AI4_STATE_CONTAINER, PREVIOUS_028AI3_STATE_CONTAINER, PREVIOUS_028AI2_STATE_CONTAINER, PREVIOUS_028AI1_STATE_CONTAINER, PREVIOUS_028_STATE_CONTAINER, PREDECESSOR_AI_STATE_CONTAINER, STABLE_STATE_CONTAINER, LEGACY_STATE)):
+        if any((cur / x).exists() for x in (STATE_CONTAINER, PREVIOUS_028AI13_STATE_CONTAINER, PREVIOUS_028AI12_STATE_CONTAINER, PREVIOUS_028AI11_STATE_CONTAINER, PREVIOUS_028AI10_STATE_CONTAINER, PREVIOUS_028AI9_STATE_CONTAINER, PREVIOUS_028AI8_STATE_CONTAINER, PREVIOUS_028AI7_STATE_CONTAINER, PREVIOUS_028AI6_STATE_CONTAINER, PREVIOUS_028AI5_STATE_CONTAINER, PREVIOUS_028AI4_STATE_CONTAINER, PREVIOUS_028AI3_STATE_CONTAINER, PREVIOUS_028AI2_STATE_CONTAINER, PREVIOUS_028AI1_STATE_CONTAINER, PREVIOUS_028_STATE_CONTAINER, PREDECESSOR_AI_STATE_CONTAINER, STABLE_STATE_CONTAINER, LEGACY_STATE)):
             return cur
         if cur.parent == cur:
             break

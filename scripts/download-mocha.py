@@ -6,7 +6,7 @@ from resumable_http import download_any,remote_size,human_bytes
 HTTPS=os.environ.get('YUAZ_MOCHA_BASE_HTTPS','https://data.cstr.ed.ac.uk/mocha').rstrip('/')
 HTTP=os.environ.get('YUAZ_MOCHA_BASE_HTTP','http://data.cstr.ed.ac.uk/mocha').rstrip('/')
 FILES=['fsew0_v1.1.tar.gz','msak0_v1.1.tar.gz','README_v1.2.txt','LICENCE.txt']
-UA='Yuaz-DDSP-Resampler/0.2.8ai.13-mocha-training'
+UA='Yuaz-DDSP-Resampler/0.2.8ai.14-mocha-training'
 
 
 def tar_valid(path):

@@ -7,7 +7,7 @@ import shlex,sys
 p=shlex.split(sys.argv[1].strip()); print(p[0] if p else '')
 PY
 }
-echo "Yuaz 0.2.8ai.13 High-Band audit"
+echo "Yuaz 0.2.8ai.14 High-Band audit"
 echo "Internal DDSP runs at 24 kHz (12 kHz Nyquist). YH is now restoration AMOUNT: 0..100."
 echo "Drop one rendered WAV here (prefer YH100), then press Return; empty input runs only the algorithm self-check:"
 read -r RAW || true

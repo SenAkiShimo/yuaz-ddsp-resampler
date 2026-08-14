@@ -1,34 +1,40 @@
-# Yuaz DDSP Resampler
+# Yuaz DDSP Resampler v0.2.8ai.14
 
-Yuaz DDSP Resampler is an OpenUtau resampler built around a dual-rate DDSP pipeline. Version `0.2.8ai.13` uses 24 kHz analysis/latent features and a 48 kHz synthesis body, with a slope-continuous upper-band crossover and an output-rate-aware terminal guard.
+A sample-conditioned Yuaz/DDSP resampler for OpenUtau on macOS.
 
-Chinese documentation: [README.zh-CN.md](README.zh-CN.md)
+v0.2.8ai.14 adds a base-model registry for compatible Yuaz checkpoints while retaining the 48 kHz synthesis body, upper-band continuity routing, and output-rate top-band guard introduced in the preceding release.
 
-## Features
+## Highlights
 
-- OpenUtau-compatible resampler wrapper for macOS.
-- 24 kHz analysis with 48 kHz DDSP synthesis.
-- Frequency-dependent upper-band spectral envelope, aperiodicity, and harmonic/noise mixing.
-- Wide 8.2–13.8 kHz crossover for smooth transition across the analysis-band edge.
-- Output-rate-aware harmonic ceiling and terminal filtering for 44.1 kHz output.
-- Optional High-Band Foundation refinement and voicebank-specific high-band profiles.
-- Voicebank adapter, Fidelity Refiner, articulation preservation, loudness normalization, and learned vocal-control packs.
-- Transactional voicebank-state migration with rollback support.
+- Imports structurally compatible Yuaz `.pt` checkpoints without relying on a fixed filename.
+- Extracts a compact runtime checkpoint containing only the Encoder, DDSP Decoder, and RVQ tensors required by the resampler.
+- Records source-checkpoint SHA-256 and training-step provenance.
+- Isolates learned voicebank state by base checkpoint and rejects mismatched state at render time.
+- Installs side by side with v0.2.8ai.13 instead of replacing it.
+- Uses a separate runtime port, OpenUtau wrapper, state namespace, trained-artifact filenames, and cache directories.
+- Keeps destructive predecessor purge disabled in this release.
 
-## Requirements
+See [`docs/BASE_MODEL_REGISTRY.md`](docs/BASE_MODEL_REGISTRY.md) and [`docs/SIDE_BY_SIDE_SAFETY.md`](docs/SIDE_BY_SIDE_SAFETY.md) for details.
 
-- macOS on Apple Silicon
-- Python 3.14
-- OpenUtau
+## Model weights
 
-The project uses a pinned Python environment. Exact package versions are listed in `requirements.lock.txt`.
-
-## Installation
+Model checkpoints are **not included in this repository**. Obtain a compatible Yuaz checkpoint from its authorized source and import it locally:
 
 ```bash
-cd yuaz-ddsp-resampler-v0.2.8ai.13
-chmod +x *.command scripts/*.command yuaz-ddsp-resampler
+./probe-yuaz-checkpoint.command
+./import-yuaz-checkpoint.command
+./list-yuaz-checkpoints.command
+./select-yuaz-checkpoint.command
+```
 
+The importer validates Encoder / DDSP Decoder / RVQ coverage before registering a model. Full training checkpoints may contain additional generator, discriminator, optimizer, and scaler state; these components are not required by the OpenUtau resampler runtime.
+
+See [`WEIGHTS.md`](WEIGHTS.md) for redistribution and provenance notes.
+
+## Install
+
+```bash
+chmod +x *.command scripts/*.command yuaz-ddsp-resampler
 ./setup-macos.command
 ./configure-macos.command
 ./self-test.command
@@ -36,68 +42,36 @@ chmod +x *.command scripts/*.command yuaz-ddsp-resampler
 ./doctor.command
 ```
 
-The installer validates and migrates compatible voicebank state before removing older installed Yuaz runtime/wrapper/state containers. Source WAV/OTO files, training datasets, and `~/Documents/Yuaz-DDSP-Backups` are not removed.
+During configuration, provide either a full compatible Yuaz checkpoint or a compact runtime checkpoint previously produced by the importer.
 
-## Diagnostics
-
-After rendering at least one note in OpenUtau:
+## Voicebank preparation
 
 ```bash
-./highband-routing-diagnostic.command
+./deep-train-voicebank.command
 ```
 
-The current full-band backend is:
+v0.2.8ai.14 writes prepared state only under `.yuaz-0.2.8ai14`. It does not migrate, rename, overwrite, or delete `.yuaz-0.2.8ai13` state.
+
+Version-specific learned artifacts include:
 
 ```text
-dual-rate-48k-ddsp-body-v3-slope-continuity-topguard
+adapter.ai14.pt
+timbre_profiles.ai14.pt
+training.ai14.json
+fidelity_refiner.ai14.pt
+fidelity_training.ai14.json
+deep_validation.ai14.json
+highband_profiles_v3.ai14.json
+cache_ai14/
+highband_cache_v3_ai14/
 ```
 
-For additional diagnostics, see the `*-test.command` and `*-diagnostic.command` scripts in the repository root.
+## OpenUtau coexistence
 
-## Training and voicebank preparation
+v0.2.8ai.14 uses TCP port `47886`; v0.2.8ai.13 remains on its existing port. Both resampler wrappers can remain installed at the same time.
 
-Existing prepared voicebanks can reuse compatible adapter, Fidelity, articulation, high-band profile, and Foundation state. Training utilities are included for users who need to prepare or retrain these components.
+`purge-previous-version.command` is intentionally disabled in v0.2.8ai.14.
 
-Relevant documentation:
+## Upstream
 
-- `docs/ARCHITECTURE.md`
-- `docs/VOICEBANK_ADAPTATION.md`
-- `docs/ARTICULATION_PRESERVATION.md`
-- `docs/LEARNED_HIGHBAND.md`
-- `HIGHBAND_FOUNDATION.md`
-- `WEIGHTS.md`
-
-## Repository layout
-
-```text
-src/yuaz_ddsp_resampler/   Python runtime and DSP implementation
-scripts/                   macOS setup, migration, diagnostics, and training tools
-control_models/            model metadata/documentation; trained weights are not committed
-docs/                      architecture and developer documentation
-previous_versions/         preserved source snapshots for compatibility/reference
-```
-
-Historical engineering notes and build manifests are stored in `docs/history/` and are not part of the runtime path.
-
-## Development
-
-Run the local checks before committing:
-
-```bash
-python3 -m compileall -q src/yuaz_ddsp_resampler
-./self-test.command
-
-for f in *.command scripts/*.command; do
-  bash -n "$f"
-done
-```
-
-See `CONTRIBUTING.md` and `docs/GITHUB_SETUP.md` for repository and release guidance.
-
-## Weights and datasets
-
-Trained checkpoints are intentionally excluded from Git. Dataset and derived-weight licensing may differ from the source-code license. See `WEIGHTS.md` and `THIRD_PARTY_NOTICES.md` before redistributing weights or datasets.
-
-## License
-
-See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Yuaz DDSP Resampler uses the Yuaz SGR encoder and DDSP decoder architecture. The upstream project is documented in [`UPSTREAM.md`](UPSTREAM.md).

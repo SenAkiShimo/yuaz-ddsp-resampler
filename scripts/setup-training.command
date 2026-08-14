@@ -2,7 +2,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 "$ROOT/scripts/import-existing-control-packs.command"
-echo "Yuaz 0.2.8ai.13 Developer Training Setup"
+echo "Yuaz 0.2.8ai.14 Developer Training Setup"
 echo "All dataset downloads are resumable. China routes are preferred where useful; official overseas sources may be used with VPN."
 echo
 echo "  1) ALL remaining packs: VocalSet + Phonation Modes + MOCHA (recommended)"

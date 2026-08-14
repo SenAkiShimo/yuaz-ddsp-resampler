@@ -18,8 +18,8 @@ from yuaz_ddsp_resampler.state import resolve_active_state
 bank=Path(sys.argv[1]).expanduser().resolve()
 state,info=resolve_active_state(bank,allow_legacy=True,verify=True)
 if state is None: raise SystemExit('No valid prepared state found.')
-p=state/'highband_profiles_v3.json'
-if not p.exists(): raise SystemExit('highband_profiles_v3.json not found.')
+p=state/'highband_profiles_v3.ai14.json'
+if not p.exists(): raise SystemExit('highband_profiles_v3.ai14.json not found.')
 d=json.loads(p.read_text(encoding='utf-8'))
 print('State:',state)
 print('Generation:',info.get('generation'))

@@ -30,6 +30,7 @@ from .core import (
     stable_seed,
 )
 from .voicebank import annotate_utau_subbanks, cache_key, entry_to_dict, file_sha256, pcm_fingerprint, scan_voicebank, voicebank_id
+from .checkpoint_identity import checkpoint_identity_sha
 
 from .learned_highband import build_profile_database, save_profile_database
 
@@ -496,8 +497,8 @@ class VoicebankPreparer:
             registry_path=self.config.get("registry_path"),
         )
         self.scan = scan_voicebank(self.voicebank_root)
-        self.yuaz_dir = Path(state_dir).expanduser().resolve() if state_dir else (self.voicebank_root / ".yuaz-0.2.8ai13")
-        self.cache_dir = self.yuaz_dir / "cache"
+        self.yuaz_dir = Path(state_dir).expanduser().resolve() if state_dir else (self.voicebank_root / ".yuaz-0.2.8ai14")
+        self.cache_dir = self.yuaz_dir / "cache_ai14"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.articulation_dir = self.yuaz_dir / "articulation"
         self.canonical_articulation_dir = self.articulation_dir / "canonical"
@@ -512,7 +513,7 @@ class VoicebankPreparer:
         self.loudness_emergency_max_abs_gain_db = float(self.config.get("normalization_emergency_max_abs_gain_db", 30.0))
         self.loudness_tolerance_db = float(self.config.get("normalization_tolerance_db", 0.05))
         checkpoint = Path(self.config["checkpoint"]).expanduser().resolve()
-        self.checkpoint_sha256 = file_sha256(checkpoint) if checkpoint.is_file() else "missing:" + str(checkpoint)
+        self.checkpoint_sha256 = checkpoint_identity_sha(checkpoint) if checkpoint.is_file() else "missing:" + str(checkpoint)
         provenance = {
             "version": CACHE_PROVENANCE_VERSION,
             "cache_format": CACHE_FORMAT,
@@ -1427,7 +1428,7 @@ class VoicebankPreparer:
             paths = list(all_paths)
             stage_a_val_paths = []
 
-        adapter_path = self.yuaz_dir / "adapter.pt"
+        adapter_path = self.yuaz_dir / "adapter.ai14.pt"
         migrated_from = None
         if adapter_path.exists():
             try:
@@ -1621,7 +1622,7 @@ class VoicebankPreparer:
         }
         save_adapter(adapter_path, adapter, metadata)
         if stage_b is not None:
-            (self.yuaz_dir / "clarity_calibration.json").write_text(
+            (self.yuaz_dir / "clarity_calibration.ai14.json").write_text(
                 json.dumps(stage_b, indent=2, ensure_ascii=False), encoding="utf-8"
             )
         torch.save({
@@ -1632,8 +1633,8 @@ class VoicebankPreparer:
             "pitch_prototype_midi": adapter.pitch_prototype_midi.detach().cpu(),
             "subbanks": subbanks,
             "labels": [x.get("label", f"subbank-{i}") for i, x in enumerate(subbanks)],
-        }, self.yuaz_dir / "timbre_profiles.pt")
-        (self.yuaz_dir / "training.json").write_text(json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8")
+        }, self.yuaz_dir / "timbre_profiles.ai14.pt")
+        (self.yuaz_dir / "training.ai14.json").write_text(json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8")
         return metadata
 
     def _fidelity_training_split(self, valid_caches):
@@ -1748,7 +1749,7 @@ class VoicebankPreparer:
             return None
         if self.mode == "profile":
             return None
-        adapter_path = self.yuaz_dir / "adapter.pt"
+        adapter_path = self.yuaz_dir / "adapter.ai14.pt"
         if not adapter_path.exists():
             return None
         adapter, _ = load_adapter(adapter_path, device=self.engine.device)
@@ -1756,7 +1757,7 @@ class VoicebankPreparer:
         for p in adapter.parameters():
             p.requires_grad_(False)
 
-        refiner_path = self.yuaz_dir / "fidelity_refiner.pt"
+        refiner_path = self.yuaz_dir / "fidelity_refiner.ai14.pt"
         migrated = None
         if refiner_path.exists():
             try:
@@ -1891,7 +1892,7 @@ class VoicebankPreparer:
         }
         if accepted:
             save_refiner(refiner_path, refiner, metadata)
-        (self.yuaz_dir / "fidelity_training.json").write_text(
+        (self.yuaz_dir / "fidelity_training.ai14.json").write_text(
             json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8"
         )
         return metadata
@@ -1901,7 +1902,7 @@ class VoicebankPreparer:
             self.voicebank_root, manifest_entries,
             model_hop=self.engine.hop, model_sr=self.engine.sr, state_dir=self.yuaz_dir,
         )
-        path = self.yuaz_dir / "highband_profiles_v3.json"
+        path = self.yuaz_dir / "highband_profiles_v3.ai14.json"
         save_profile_database(path, db)
         stats = db.get("stats", {})
         print(
@@ -1933,7 +1934,7 @@ class VoicebankPreparer:
                 and profile.get("analysis_signature") == self.analysis_signature
                 and profile.get("cache_format") == CACHE_FORMAT
             )
-            required_files_ok = all((self.yuaz_dir / name).is_file() for name in ("adapter.pt", "timbre_profiles.pt", "training.json"))
+            required_files_ok = all((self.yuaz_dir / name).is_file() for name in ("adapter.ai14.pt", "timbre_profiles.ai14.pt", "training.ai14.json"))
             activation_safe = bool(metadata is not None and provenance_ok and required_files_ok and stage_a.get("selected_checkpoint"))
             deep_validation = {
                 "format": 1,
@@ -1953,7 +1954,7 @@ class VoicebankPreparer:
                 "policy": "do not activate incomplete/provenance-mismatched deep state; guarded checkpoints may fall back safely",
                 "created_at": time.time(),
             }
-            (self.yuaz_dir / "deep_validation.json").write_text(
+            (self.yuaz_dir / "deep_validation.ai14.json").write_text(
                 json.dumps(deep_validation, indent=2, ensure_ascii=False), encoding="utf-8"
             )
             if not activation_safe:

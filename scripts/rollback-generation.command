@@ -21,11 +21,11 @@ from yuaz_ddsp_resampler.client import ENGINE_VERSION,ping,send
 from yuaz_ddsp_resampler.state import rollback_to_previous,write_local_registry,merge_global_registry
 bank=Path(sys.argv[1]).resolve(); root=Path(sys.argv[2]).resolve()
 cfg=json.loads((root/'config.json').read_text(encoding='utf-8'))
-host=cfg.get('host','127.0.0.1'); port=int(cfg.get('port',47885)); rid=cfg.get('runtime_id')
+host=cfg.get('host','127.0.0.1'); port=int(cfg.get('port',47886)); rid=cfg.get('runtime_id')
 st=ping(host,port)
 if st and st.get('ready'):
     if st.get('engine_version')!=ENGINE_VERSION or st.get('runtime_id')!=rid:
-        raise SystemExit('Another Yuaz runtime occupies the 0.2.8ai.13 port; rollback refused.')
+        raise SystemExit('Another Yuaz runtime occupies the 0.2.8ai.14 port; rollback refused.')
     if int(st.get('active_renders') or 0)>0:
         raise SystemExit('OpenUtau is actively rendering. Rollback refused; try again after rendering stops.')
     try: send(host,port,{'action':'shutdown','runtime_id':rid},timeout=2)

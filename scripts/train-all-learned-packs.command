@@ -2,7 +2,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 "$ROOT/scripts/import-existing-control-packs.command"
-echo "Yuaz 0.2.8ai.13 — Train ALL currently available learned-control packs"
+echo "Yuaz 0.2.8ai.14 — Train ALL currently available learned-control packs"
 echo "Existing GTSinger YB/YF/YX/YP foundation is reused and is NOT retrained."
 echo
 if [ ! -f "$ROOT/control_models/ai_gender_foundation-v1.pt" ]; then "$ROOT/scripts/train-ai-gender-foundation.command"; else echo "Reuse existing Gender pack: control_models/ai_gender_foundation-v1.pt"; fi
@@ -11,4 +11,4 @@ if [ ! -f "$ROOT/control_models/ai_mouth_foundation-v1.pt" ]; then "$ROOT/script
 echo
 echo "Learned pack set ready:"
 ls -lh "$ROOT/control_models"/*.pt 2>/dev/null || true
-echo "Next: ./deep-train-ai-voicebank.command to pin every compatible pack into .yuaz-0.2.8ai13"
+echo "Next: ./deep-train-ai-voicebank.command to pin every compatible pack into .yuaz-0.2.8ai14"

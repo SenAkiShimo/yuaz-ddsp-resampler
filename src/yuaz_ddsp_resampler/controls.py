@@ -49,7 +49,7 @@ class YuazControls:
 
     @property
     def highband_yuaz_only_hz(self):
-        # v0.2.8ai.13: YH is an amount control, not a hidden crossover selector.
+        # v0.2.8ai.14: YH is an amount control, not a hidden crossover selector.
         # Stronger restoration starts slightly lower so the synthesized >12 kHz
         # extension can crossfade against the 24 kHz DDSP body's 8–12 kHz edge.
         if not self.highband_enabled:

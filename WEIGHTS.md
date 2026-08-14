@@ -1,22 +1,35 @@
-# Weight provenance
+# Model weights and provenance
 
-This source package does not contain a High-Band Foundation checkpoint.
+This repository distributes source code only. It does not contain Yuaz base checkpoints, compact runtime checkpoints, voicebank adapters, fidelity refiners, High-Band Foundation weights, or learned-control checkpoints.
 
-`train-highband-foundation.command` now creates:
+## Yuaz base checkpoints
 
-```text
-control_models/highband_foundation-v2.pt
+v0.2.8ai.14 accepts structurally compatible Yuaz checkpoints through the local model importer:
+
+```bash
+./probe-yuaz-checkpoint.command
+./import-yuaz-checkpoint.command
+./list-yuaz-checkpoints.command
+./select-yuaz-checkpoint.command
 ```
 
-The runtime remains compatible with an existing v1 `highband_foundation.pt`, so existing checkpoints remain usable without retraining.
+A full training checkpoint is validated against the current Encoder, DDSP Decoder, and RVQ module shapes. When compatible, the importer writes a compact local runtime containing only those tensors and records:
 
-A trained checkpoint is a derived artifact of the exact source records listed by:
+- source checkpoint filename;
+- source checkpoint SHA-256;
+- training step when available;
+- compact runtime SHA-256.
 
-```text
-~/YuazControlDatasets/HighBandFoundation/audit.json
-~/YuazControlDatasets/HighBandFoundation/shards/manifest.json
-```
+Imported models are stored outside the repository under the local YuazDDSP application-support directory.
 
-Before distributing a PT, review the licenses/terms of every dataset that contributed accepted training shards. Do not assume the source-code license automatically applies to derived model weights.
+Do not redistribute an upstream checkpoint unless its license or the checkpoint provider explicitly permits redistribution. Source-code licensing does not automatically grant redistribution rights for model weights.
 
-The existing learned-control PTs have their own dataset provenance and should be documented separately in a public release.
+## High-Band Foundation
+
+`train-highband-foundation.command` creates a local checkpoint under `control_models/`. Trained High-Band Foundation weights are derived artifacts and are not committed to this repository.
+
+Before distributing such a checkpoint, review the terms of every dataset represented by the corresponding training audit and shard manifest.
+
+## Learned-control and voicebank weights
+
+Voicebank adapters, Fidelity weights, learned-control packs, and other `.pt` artifacts may have separate dataset or recording provenance. Document and verify redistribution rights independently before publishing them.

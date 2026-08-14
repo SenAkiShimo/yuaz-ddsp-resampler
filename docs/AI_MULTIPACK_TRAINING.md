@@ -1,4 +1,4 @@
-# Multi-pack developer training — 0.2.8ai.13
+# Multi-pack developer training — 0.2.8ai.14
 
 ## Goal
 
@@ -32,4 +32,4 @@ MOCHA is speech, so it is deliberately an auxiliary prior rather than a singing-
 
 After all downloads complete, run `./train-all-learned-packs.command`. Existing packs are skipped. The existing GTSinger technique pack is reused rather than retrained.
 
-Then run `./deep-train-ai-voicebank.command` when you want to create a new `.yuaz-0.2.8ai13` generation containing frozen compatible copies of every available pack.
+Then run `./deep-train-ai-voicebank.command` when you want to create a new `.yuaz-0.2.8ai14` generation containing frozen compatible copies of every available pack.

@@ -7,7 +7,7 @@ if [ ! -x .venv/bin/python ]; then
   exit 1
 fi
 echo "LEGACY DIAGNOSTIC ONLY: this creates statistical technique profiles and is NOT the realtime AI controller."
-echo "For 0.2.8ai.13 learned controls, use train-ai-control-foundation.command instead."
+echo "For 0.2.8ai.14 learned controls, use train-ai-control-foundation.command instead."
 echo
 echo "Drop the extracted GTSinger root folder here, then press Return:"
 read -r RAW

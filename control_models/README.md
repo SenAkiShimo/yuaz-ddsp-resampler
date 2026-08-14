@@ -1,6 +1,6 @@
 # Modular AI control packs
 
-0.2.8ai.13 supports independent Yuaz-native DDSP control packs. Stable real weights can later be bundled in `control_models/`, so end users do not need any developer datasets.
+0.2.8ai.14 supports independent Yuaz-native DDSP control packs. Stable real weights can later be bundled in `control_models/`, so end users do not need any developer datasets.
 
 - `ai_control_foundation-v2.pt` — existing GTSinger Chinese Core: YB Breathiness, YF Falsetto, YX Mixed Voice, YP Pharyngeal.
 - `ai_gender_foundation-v1.pt` — VocalSet: signed YG Gender/Formant, spectral-envelope only.

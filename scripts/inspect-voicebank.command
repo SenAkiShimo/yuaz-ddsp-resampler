@@ -47,21 +47,21 @@ print('  multipitch_canonical_count:',art.get('multipitch_canonical_count'))
 print('  single_neutral_fallback_count:',art.get('single_neutral_fallback_count'))
 print('  mean_coherence:',art.get('mean_coherence'))
 print()
-hb=load('highband_profiles_v3.json') or {}
+hb=load('highband_profiles_v3.ai14.json') or {}
 print('Learned High-Band v3:')
 print('  present:',bool(hb))
 print('  stats:',hb.get('stats'))
 print()
 profile=load('profile.json') or {}
-training=load('training.json')
-fidelity=load('fidelity_training.json')
-clarity=load('clarity_calibration.json')
-deep=load('deep_validation.json')
+training=load('training.ai14.json')
+fidelity=load('fidelity_training.ai14.json')
+clarity=load('clarity_calibration.ai14.json')
+deep=load('deep_validation.ai14.json')
 print('Training:')
-print('  adapter:', 'yes' if (state/'adapter.pt').is_file() else 'no')
-print('  timbre profiles:', 'yes' if (state/'timbre_profiles.pt').is_file() else 'no')
+print('  adapter:', 'yes' if (state/'adapter.ai14.pt').is_file() else 'no')
+print('  timbre profiles:', 'yes' if (state/'timbre_profiles.ai14.pt').is_file() else 'no')
 print('  clarity calibration:', 'yes' if clarity else 'no')
-print('  fidelity refiner:', 'yes' if (state/'fidelity_refiner.pt').is_file() else 'no')
+print('  fidelity refiner:', 'yes' if (state/'fidelity_refiner.ai14.pt').is_file() else 'no')
 print('  fidelity metadata:', 'yes' if fidelity else 'no')
 print('  fidelity stage:', (fidelity or {}).get('stage'))
 print('  fidelity hard limit:', (fidelity or {}).get('residual_rms_hard_limit'))
@@ -73,7 +73,7 @@ if deep:
     print('  stage C accepted:', deep.get('stage_c_accepted'))
 print('  cache files:', len(list((state/'cache').glob('*.npz'))) if (state/'cache').exists() else 0)
 print()
-for name,data in [('profile.json',profile),('training.json',training),('clarity_calibration.json',clarity),('fidelity_training.json',fidelity),('deep_validation.json',deep)]:
+for name,data in [('profile.json',profile),('training.ai14.json',training),('clarity_calibration.ai14.json',clarity),('fidelity_training.ai14.json',fidelity),('deep_validation.ai14.json',deep)]:
     print(f'--- {name} ---')
     print(json.dumps(data,indent=2,ensure_ascii=False) if data is not None else 'not found')
 PY

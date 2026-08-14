@@ -10,7 +10,7 @@ mkdir -p "$DATA_ROOT" "$TOOLS"
 PYTHON="$ROOT/.venv/bin/python"
 [ -x "$PYTHON" ] || { echo "Run setup-macos.command first."; exit 1; }
 
-echo "Yuaz 0.2.8ai.13 — Gender/Formant Developer Training Setup"
+echo "Yuaz 0.2.8ai.14 — Gender/Formant Developer Training Setup"
 echo "Developer-only data. Final users can receive the trained .pt inside Yuaz."
 echo "Python packages still prefer the Tsinghua PyPI mirror."
 echo

@@ -50,7 +50,7 @@ esac
 
 echo
 echo "Checking selected files and exact remaining bytes..."
-echo "This 0.2.8ai.13 downloader reuses the same manifest/.part files across China and official routes."
+echo "This 0.2.8ai.14 downloader reuses the same manifest/.part files across China and official routes."
 "$PYTHON" "$ROOT/scripts/download-gtsinger.py" \
   --preset "$PRESET" --local-dir "$DEST" --endpoint "$ENDPOINT" --dry-run
 

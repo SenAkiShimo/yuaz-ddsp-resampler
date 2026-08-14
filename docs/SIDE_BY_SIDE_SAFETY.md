@@ -1,11 +1,45 @@
-# Side-by-side / migration safety — 0.2.8ai.13
+# Side-by-side safety — v0.2.8ai.14
 
-0.2.8ai.13 writes new prepared state only into `.yuaz-0.2.8ai13` and uses `voicebank_registry-0.2.8ai13.json`.
+v0.2.8ai.14 is installed alongside v0.2.8ai.13 rather than replacing it.
 
-The preferred read-only migration source is `.yuaz-0.2.8ai12`, followed by ai.11 and older namespaces. A new ai.13 generation is built in staging, its critical state is validated, and only then is it committed ACTIVE.
+## Separate runtime resources
 
-Before installed predecessors are purged, `backup-current-stable.command` snapshots the current ai.12 runtime/wrapper and available voicebank state. Source WAV/OTO, datasets and `~/Documents/Yuaz-DDSP-Backups` are not deleted.
+The two releases use independent runtime resources:
 
-The **source code of ai.12 is not discarded**. The exact previous package is bundled at `previous_versions/v0.2.8ai.12/`; that snapshot also contains ai.12's preserved ai.11 tree. In the active ai.13 source, the ai.12 upper-band head/mixer and ai.11 synthesis fallback remain callable. ai.13 adds a new route instead of deleting those implementations.
+```text
+v0.2.8ai.13 runtime:  ~/Library/Application Support/YuazDDSP/0.2.8ai.13
+v0.2.8ai.14 runtime:  ~/Library/Application Support/YuazDDSP/0.2.8ai.14
 
-After all state migrations validate, the installer may remove older *installed* Yuaz runtimes/wrappers and migrated state containers so OpenUtau does not keep multiple active Yuaz versions. That cleanup does not remove the preserved source snapshots inside the ai.13 package or the pre-purge backups.
+v0.2.8ai.13 port:     47885
+v0.2.8ai.14 port:     47886
+```
+
+Each release has its own OpenUtau wrapper and manifest.
+
+## Separate voicebank state
+
+v0.2.8ai.14 writes only to:
+
+```text
+.yuaz-0.2.8ai14/
+```
+
+Existing `.yuaz-0.2.8ai13/` state is not used as ai.14 learned-state fallback and is not renamed, migrated, overwritten, or deleted.
+
+Deep-trained files and derived caches use ai.14-specific names to prevent collisions with older state layouts.
+
+## Deep preservation snapshot
+
+Before an ai.14 Deep operation begins, the preservation step can snapshot the installed ai.13 runtime/wrapper and available ai.13 voicebank state into:
+
+```text
+~/Documents/Yuaz-DDSP-Backups/ai14-preservation/
+```
+
+Rebuildable caches are excluded from this safety snapshot.
+
+## Purge policy
+
+`purge-previous-version.command` is disabled in v0.2.8ai.14. Installation and configuration do not invoke predecessor purge or state migration.
+
+Git history preserves the v0.2.8ai.13 source revision. Distribution archives may additionally bundle a read-only source snapshot for regression comparison; such snapshots are never used as writable runtime state.

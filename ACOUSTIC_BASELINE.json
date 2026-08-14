@@ -5,7 +5,7 @@
     "src/yuaz_ddsp_resampler/articulation.py": "5223ffe1ef9ee0cfbc69336691256896492a6b5328ce98f2639ccd0b50ede368",
     "src/yuaz_ddsp_resampler/loudness.py": "6d0045bbc13508866b07a2e503dd9f4a0173d5578d14d67414bd3332b4a1ae8e"
   },
-  "note": "0.2.8ai.13 uses a 24 kHz analysis path, 48 kHz synthesis, a wide slope-continuous upper-band crossover, output-rate-aware terminal shaping, and preserved compatibility fallbacks.",
+  "note": "0.2.8ai.14 uses a 24 kHz analysis path, 48 kHz synthesis, a wide slope-continuous upper-band crossover, output-rate-aware terminal shaping, and preserved compatibility fallbacks.",
   "intentionally_changed_modules": {
     "src/yuaz_ddsp_resampler/learned_highband.py": "aee986e936fe2942648e02d81aa8c5e629aa727465abad671f12d4341dad66e1",
     "src/yuaz_ddsp_resampler/highband_foundation.py": "43d5721407be6725dbe665d398bc63f40297ce127c0af2816fb1e630f804abe6",

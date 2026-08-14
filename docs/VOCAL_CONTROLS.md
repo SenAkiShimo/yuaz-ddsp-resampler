@@ -1,4 +1,4 @@
-# Vocal Controls — 0.2.8ai.13
+# Vocal Controls — 0.2.8ai.14
 
 Yuaz exposes exactly 12 custom controls:
 

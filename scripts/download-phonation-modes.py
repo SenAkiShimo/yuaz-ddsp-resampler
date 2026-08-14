@@ -8,7 +8,7 @@ PROJECT='pa3ha'
 NAME='ND357A_24bit_cut_ALL.zip'
 API=os.environ.get('YUAZ_OSF_FILE_API',f'https://api.osf.io/v2/files/{FILE_GUID}/')
 FALLBACKS=tuple(x for x in [os.environ.get('YUAZ_OSF_DOWNLOAD_URL'),f'https://osf.io/download/{FILE_GUID}/',f'https://osf.io/{FILE_GUID}/download'] if x)
-UA='Yuaz-DDSP-Resampler/0.2.8ai.13-phonation-training'
+UA='Yuaz-DDSP-Resampler/0.2.8ai.14-phonation-training'
 AUDIO_EXT={'.wav','.flac','.aif','.aiff'}
 
 

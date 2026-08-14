@@ -9,7 +9,7 @@ export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 [ -f "$WORK/audit.json" ] || { echo "Missing $WORK/audit.json. Run ./audit-highband-datasets.command first."; exit 1; }
 SEGMENTS="${YUAZ_HIGHBAND_SEGMENTS:-6000}"
 VAL="${YUAZ_HIGHBAND_VAL_SEGMENTS:-800}"
-echo "Yuaz 0.2.8ai.13 — Prepare paired High-Band shards"
+echo "Yuaz 0.2.8ai.14 — Prepare paired High-Band shards"
 echo "Train segments: $SEGMENTS"
 echo "Validation segments: $VAL"
 echo "Low-F0 records are oversampled automatically."

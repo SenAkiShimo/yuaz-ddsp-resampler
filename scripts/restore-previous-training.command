@@ -13,7 +13,7 @@ read -r RAW
 BANK="$(strip_path "$RAW")"
 [ -d "$BANK" ] || { echo "Voicebank folder not found: $BANK"; exit 1; }
 echo "Restore from the latest external backup:"
-echo "  1) 0.2.8ai.13 state (restores only the current namespace)"
+echo "  1) 0.2.8ai.14 state (restores only the current namespace)"
 echo "  2) RC3.2 legacy baseline"
 echo "Stable RC4.2 is intentionally not modified by this AI restore tool."
 read -r MODE

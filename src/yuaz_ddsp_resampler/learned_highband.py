@@ -227,7 +227,7 @@ def _average_profiles(profiles):
 def build_profile_database(voicebank_root, manifest_entries, model_hop=256, model_sr=24000, state_dir=None):
     root = Path(voicebank_root).resolve()
     state_dir = Path(state_dir).resolve() if state_dir is not None else root / ".yuaz-alpha8-rc3-2"
-    cache_dir = state_dir / "highband_cache_v3"
+    cache_dir = state_dir / "highband_cache_v3_ai14"
     cache_dir.mkdir(parents=True, exist_ok=True)
     groups = {}
     analyzed = cached = skipped = 0

@@ -12,6 +12,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
+from .checkpoint_identity import checkpoint_identity_sha
 from .ai_vocal_controls import AIControlAdapter, AP_BANDS, SPECTRAL_BANDS, save_ai_control_adapter
 from .control_training import discover_gtsinger_pairs
 from .core import YuazDDSPResamplerEngine, extract_f0, read_audio
@@ -70,7 +71,7 @@ class NativeYuazDDSPExtractor:
             output_sr=cfg.get("output_sr", 44100),
             registry_path=None,
         )
-        self.checkpoint_sha256 = sha256(self.checkpoint)
+        self.checkpoint_sha256 = checkpoint_identity_sha(self.checkpoint)
         self.sample_rate = int(self.engine.sr)
         self.hop = int(self.engine.hop)
 

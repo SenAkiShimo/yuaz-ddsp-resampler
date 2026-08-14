@@ -1,20 +1,20 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-INST="$HOME/Library/Application Support/YuazDDSP/0.2.8ai.13/logs/render_requests.jsonl"
+INST="$HOME/Library/Application Support/YuazDDSP/0.2.8ai.14/logs/render_requests.jsonl"
 LOCAL="$ROOT/logs/render_requests.jsonl"
 LOG=""
 [ -f "$INST" ] && LOG="$INST"
 [ -z "$LOG" ] && [ -f "$LOCAL" ] && LOG="$LOCAL"
 if [ -z "$LOG" ]; then
-  echo "No 0.2.8ai.13 render log yet. Render at least one note in OpenUtau first."
+  echo "No 0.2.8ai.14 render log yet. Render at least one note in OpenUtau first."
   exit 0
 fi
 python3 - "$LOG" <<'PY'
 import json,sys
 from pathlib import Path
 p=Path(sys.argv[1]); lines=p.read_text(encoding='utf-8',errors='replace').splitlines()[-12:]
-print('Yuaz 0.2.8ai.13 recent render routing:',p)
+print('Yuaz 0.2.8ai.14 recent render routing:',p)
 for line in lines:
  try: d=json.loads(line)
  except Exception: continue

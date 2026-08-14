@@ -1,25 +1,13 @@
 # Changelog
 
-## 0.2.8ai.13
+## 0.2.8ai.14
 
-- Added a wide 8.2–13.8 kHz slope-continuous full-band crossover.
-- Added an output-rate-aware harmonic ceiling and separate harmonic/aperiodic terminal tapers.
-- Added a post-refinement terminal guard for 44.1 kHz output.
-- Added band-specific bridge, seam, presence, air, and top-band level control.
-- Kept the 0.2.8ai.12 upper-band path and earlier full-band mixer as runtime fallbacks.
-- Added migration from `.yuaz-0.2.8ai12` to `.yuaz-0.2.8ai13`.
-- Added regression coverage for upper-band slope continuity and terminal-band suppression.
-
-## 0.2.8ai.12
-
-- Added a frequency-dependent upper-band parameter head for 48 kHz synthesis.
-- Added band-wise upper-band safety control instead of a single global high-band limiter.
-- Extended spectral envelope and aperiodicity above the 24 kHz analysis band.
-
-## 0.2.8ai.11
-
-- Added the dual-rate 24 kHz analysis / 48 kHz synthesis path.
-- Added High-Band Foundation v2 compatibility and source-texture continuity refinement.
-- Added validated voicebank-state migration into the ai.11 namespace.
-
-Earlier implementation notes are preserved in `previous_versions/` and `docs/history/`.
+- Added probing, importing, compact runtime extraction, listing, and selection for compatible Yuaz base checkpoints.
+- Added source-checkpoint SHA-256 provenance to ai.14 voicebank generations.
+- Added render-time rejection of learned state created under a different selected base checkpoint.
+- Removed predecessor learned-state fallback from the ai.14 runtime.
+- Changed installation to side-by-side operation with v0.2.8ai.13; predecessor purge and state migration are disabled.
+- Assigned TCP port 47886 to the ai.14 runtime so v0.2.8ai.13 can remain installed concurrently.
+- Added ai.14-specific Deep artifact names and cache directories.
+- Added pre-Deep preservation snapshots for installed ai.13 runtime/wrapper and available ai.13 voicebank state.
+- Retained the 48 kHz synthesis body, slope-continuity upper-band routing, and output-rate top-band guard from v0.2.8ai.13.

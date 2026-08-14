@@ -11,7 +11,7 @@ def human_bytes(n):
         n /= 1024
 
 
-def remote_size(url, user_agent='Yuaz-DDSP-Resampler/0.2.8ai.13', timeout=30):
+def remote_size(url, user_agent='Yuaz-DDSP-Resampler/0.2.8ai.14', timeout=30):
     headers={'User-Agent':user_agent,'Range':'bytes=0-0','Accept':'*/*'}
     req=urllib.request.Request(url,headers=headers)
     with urllib.request.urlopen(req,timeout=timeout) as r:
@@ -39,7 +39,7 @@ def _response_total(response, existing, status):
     return 0
 
 
-def download_any(urls, dest, expected=0, user_agent='Yuaz-DDSP-Resampler/0.2.8ai.13', retries=120, timeout=60, label=None):
+def download_any(urls, dest, expected=0, user_agent='Yuaz-DDSP-Resampler/0.2.8ai.14', retries=120, timeout=60, label=None):
     if isinstance(urls,str):urls=[urls]
     urls=[u for u in urls if u]
     if not urls:raise ValueError('No download URL supplied')
@@ -93,5 +93,5 @@ def download_any(urls, dest, expected=0, user_agent='Yuaz-DDSP-Resampler/0.2.8ai
     return False
 
 
-def download(url,dest,expected=0,user_agent='Yuaz-DDSP-Resampler/0.2.8ai.13',retries=120,timeout=60,label=None):
+def download(url,dest,expected=0,user_agent='Yuaz-DDSP-Resampler/0.2.8ai.14',retries=120,timeout=60,label=None):
     return download_any([url],dest,expected,user_agent,retries,timeout,label)

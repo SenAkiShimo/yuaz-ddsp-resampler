@@ -1,4 +1,5 @@
 #!/bin/bash
-set -e
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-exec "$ROOT/scripts/migrate-and-purge-previous.command" "$@"
+set -euo pipefail
+echo "REFUSED: ai.14 does not purge predecessor versions."
+echo "ai.13 must remain installed and its .yuaz-0.2.8ai13 states remain untouched."
+exit 2
