@@ -45,8 +45,6 @@ def _frequency_warp(envelope, shift_semitones, voiced=None):
         return envelope
     scale = torch.pow(envelope.new_tensor(2.0), shift / 12.0)
     freq = torch.linspace(0.0, 1.0, c, device=envelope.device, dtype=envelope.dtype).view(1, c, 1)
-    # Keep the extreme high band progressively anchored so stronger formant shifts
-    # do not drag unvoiced/high-frequency articulation with the vocal-tract warp.
     anchor = 1.0 - 0.78 * torch.clamp((freq - 0.46) / 0.44, 0.0, 1.0)
     local_scale = 1.0 + (scale - 1.0) * anchor
     source_freq = freq * local_scale
@@ -69,8 +67,6 @@ def _mouth_formant_warp(envelope, mouth, sample_rate, voiced):
     nyquist = max(1.0, float(sample_rate) * 0.5)
     freq = torch.linspace(0.0, 1.0, c, device=envelope.device, dtype=envelope.dtype).view(1, c, 1)
     hz = freq * nyquist
-    # Jaw/opening control: move the first-formant region most strongly, with a
-    # gentler secondary displacement in the F2 region. Positive = more open.
     f1_weight = torch.exp(-0.5 * torch.square((hz - 760.0) / 620.0))
     f2_weight = 0.38 * torch.exp(-0.5 * torch.square((hz - 2050.0) / 1050.0))
     shift_hz = (255.0 * f1_weight + 115.0 * f2_weight) * control
@@ -102,17 +98,19 @@ def apply_decoder_vocal_controls(spectral_envelope, ap_bands, gate, f0, frame_co
     device = spectral_envelope.device
     dtype = spectral_envelope.dtype
     learned_controls = set(str(x) for x in (learned_controls or ()))
-    # Use a restrained deterministic carrier beneath learned control packs.
-    def carrier(name, learned_scale=0.34, fallback_scale=1.0):
+
+    def carrier(name, learned_scale=0.60, fallback_scale=1.0):
         return float(learned_scale if name in learned_controls else fallback_scale)
-    tension_scale = carrier("tension", 0.34)
-    breathiness_scale = carrier("breathiness", 0.30)
-    voicing_scale = carrier("voicing", 0.34)
-    gender_scale = carrier("gender_formant", 0.34)
-    mouth_scale = carrier("mouth", 0.34)
-    falsetto_scale = carrier("falsetto", 0.30, 0.62)
-    mixed_scale = carrier("mixed_voice", 0.30, 0.62)
-    pharyngeal_scale = carrier("pharyngeal", 0.30, 0.62)
+
+    tension_scale = carrier("tension", 0.70)
+    breathiness_scale = carrier("breathiness", 0.34)
+    voicing_scale = carrier("voicing", 0.60)
+    gender_scale = carrier("gender_formant", 0.65)
+    mouth_scale = carrier("mouth", 0.65)
+    falsetto_scale = carrier("falsetto", 0.52, 0.62)
+    mixed_scale = carrier("mixed_voice", 0.62, 0.62)
+    pharyngeal_scale = carrier("pharyngeal", 0.62, 0.62)
+
     tension = _interp_curve(frame_controls.get("tension"), frames, device, dtype)
     breathiness = _interp_curve(frame_controls.get("breathiness"), frames, device, dtype)
     voicing = _interp_curve(frame_controls.get("voicing"), frames, device, dtype)
@@ -121,6 +119,7 @@ def apply_decoder_vocal_controls(spectral_envelope, ap_bands, gate, f0, frame_co
     falsetto = _interp_curve(frame_controls.get("falsetto"), frames, device, dtype)
     mixed_voice = _interp_curve(frame_controls.get("mixed_voice"), frames, device, dtype)
     pharyngeal = _interp_curve(frame_controls.get("pharyngeal"), frames, device, dtype)
+
     tension_eff = tension * tension_scale
     voicing_eff = voicing * voicing_scale
     gender_eff = gender * gender_scale
@@ -134,13 +133,11 @@ def apply_decoder_vocal_controls(spectral_envelope, ap_bands, gate, f0, frame_co
 
     out_s = spectral_envelope
 
-    # Gender/Formant warps the voiced vocal-tract envelope without changing pitch.
     if float(torch.max(torch.abs(gender_eff)).detach().cpu()) > 1e-7:
         gender_curve = torch.sign(gender_eff) * torch.pow(torch.abs(gender_eff), 0.86)
         formant_shift = 5.8 * gender_curve
         out_s = _frequency_warp(out_s, formant_shift, voiced=voiced)
 
-    # Mouth/Resonance shifts low/mid formant regions on voiced frames.
     if float(torch.max(torch.abs(mouth_eff)).detach().cpu()) > 1e-7:
         out_s = _mouth_formant_warp(out_s, mouth_eff, sample_rate, voiced)
 
@@ -149,14 +146,12 @@ def apply_decoder_vocal_controls(spectral_envelope, ap_bands, gate, f0, frame_co
     nyquist = max(1.0, float(sample_rate) * 0.5)
     hz = freq * nyquist
 
-    # Tension changes voiced spectral tilt without modifying aperiodicity.
     low = torch.exp(-0.5 * torch.square((hz - 520.0) / 700.0))
     presence = torch.exp(-0.5 * torch.square((hz - 3200.0) / 2300.0))
     upper = torch.exp(-0.5 * torch.square((hz - 6500.0) / 3000.0))
     tension_shape = -0.34 * low + 0.72 * presence + 0.38 * upper
     tension_gain = torch.exp(0.92 * tension_eff * tension_shape * voiced)
 
-    # Add a restrained resonance component after the formant displacement.
     mouth_presence = (
         0.70 * torch.exp(-0.5 * torch.square((hz - 1700.0) / 1050.0))
         + 0.28 * torch.exp(-0.5 * torch.square((hz - 3100.0) / 1500.0))
@@ -164,21 +159,18 @@ def apply_decoder_vocal_controls(spectral_envelope, ap_bands, gate, f0, frame_co
     )
     mouth_gain = torch.exp(0.42 * mouth_eff * mouth_presence * voiced)
 
-    # Add a restrained low/upper tilt in addition to the frequency warp.
     gender_shape = (
         0.42 * torch.exp(-0.5 * torch.square((hz - 900.0) / 950.0))
         - 0.34 * torch.exp(-0.5 * torch.square((hz - 3150.0) / 1900.0))
     )
     gender_gain = torch.exp(0.62 * gender_eff * gender_shape * voiced)
 
-    # Positive voicing adds body/presence rather than changing AP.  Its actual
-    # harmonic-vs-noise control is handled by gate below.
     voice_body = (
         0.55 * torch.exp(-0.5 * torch.square((hz - 820.0) / 850.0))
         + 0.32 * torch.exp(-0.5 * torch.square((hz - 2100.0) / 1500.0))
     )
     voicing_gain = torch.exp(0.28 * voicing_eff * voice_body * voiced)
-    # Low-gain carriers define stable directions for technique controls.
+
     falsetto_shape = (-0.46 * torch.exp(-0.5 * torch.square((hz - 720.0) / 900.0))
                       + 0.30 * torch.exp(-0.5 * torch.square((hz - 4200.0) / 2600.0)))
     mixed_shape = (0.42 * torch.exp(-0.5 * torch.square((hz - 1700.0) / 1300.0))
@@ -193,13 +185,13 @@ def apply_decoder_vocal_controls(spectral_envelope, ap_bands, gate, f0, frame_co
 
     ap_frames = ap_bands.shape[-1]
     b_ap = _interp_curve(breathiness, ap_frames, ap_bands.device, ap_bands.dtype)
+    t_ap = _interp_curve(tension_eff, ap_frames, ap_bands.device, ap_bands.dtype)
     voiced_ap = (f0 > 1.0).to(ap_bands.dtype)
     if voiced_ap.shape[-1] != ap_frames:
         voiced_ap = F.interpolate(voiced_ap, size=ap_frames, mode="nearest")
     ap_freq = torch.linspace(0.0, 1.0, ap_bands.shape[1], device=ap_bands.device, dtype=ap_bands.dtype).view(1, -1, 1)
     out_ap = ap_bands
-    # The learned model owns only directly supervised positive technique axes.
-    # Deterministic fallback remains for unsupported/opposite directions.
+
     b_pos = torch.clamp(b_ap, 0.0, 1.0) * breathiness_scale
     b_neg = torch.clamp(-b_ap, 0.0, 1.0)
     if float(torch.max(b_pos + b_neg).detach().cpu()) > 1e-7:
@@ -207,7 +199,15 @@ def apply_decoder_vocal_controls(spectral_envelope, ap_bands, gate, f0, frame_co
         out_ap = out_ap + b_pos * 0.58 * ap_shape * (1.0 - out_ap)
         out_ap = out_ap - b_neg * 0.46 * ap_shape * out_ap
         out_ap = out_ap.clamp(0.012, 0.988)
-    # Falsetto carrier adds restrained aperiodicity; mixed voice slightly reduces it.
+
+    t_pos = torch.clamp(t_ap, 0.0, 1.0) * voiced_ap
+    t_neg = torch.clamp(-t_ap, 0.0, 1.0) * voiced_ap
+    if float(torch.max(t_pos + t_neg).detach().cpu()) > 1e-7:
+        tension_ap_shape = 0.92 - 0.32 * ap_freq
+        out_ap = out_ap - 0.30 * t_pos * tension_ap_shape * out_ap
+        out_ap = out_ap + 0.18 * t_neg * tension_ap_shape * (1.0 - out_ap)
+        out_ap = out_ap.clamp(0.012, 0.988)
+
     f_ap = _interp_curve(falsetto_eff, ap_frames, ap_bands.device, ap_bands.dtype)
     x_ap = _interp_curve(mixed_eff, ap_frames, ap_bands.device, ap_bands.dtype)
     if float(torch.max(f_ap + x_ap).detach().cpu()) > 1e-7:
@@ -219,22 +219,33 @@ def apply_decoder_vocal_controls(spectral_envelope, ap_bands, gate, f0, frame_co
     gate_frames = gate.shape[-1]
     b_g = _interp_curve(breathiness, gate_frames, gate.device, gate.dtype)
     v_g = _interp_curve(voicing, gate_frames, gate.device, gate.dtype)
+    t_g = _interp_curve(tension_eff, gate_frames, gate.device, gate.dtype)
     voiced_g = (f0 > 1.0).to(gate.dtype)
     if voiced_g.shape[-1] != gate_frames:
         voiced_g = F.interpolate(voiced_g, size=gate_frames, mode="nearest")
     out_gate = gate
+
     v_pos = torch.clamp(v_g, 0.0, 1.0) * voiced_g * voicing_scale
     v_neg = torch.clamp(-v_g, 0.0, 1.0) * voiced_g * voicing_scale
     if float(torch.max(v_pos + v_neg).detach().cpu()) > 1e-7:
         out_gate = out_gate + 0.52 * v_pos * (1.0 - out_gate)
         out_gate = out_gate - 0.52 * v_neg * out_gate
         out_gate = out_gate.clamp(0.02, 0.98)
+
+    t_pos_g = torch.clamp(t_g, 0.0, 1.0) * voiced_g
+    t_neg_g = torch.clamp(-t_g, 0.0, 1.0) * voiced_g
+    if float(torch.max(t_pos_g + t_neg_g).detach().cpu()) > 1e-7:
+        out_gate = out_gate + 0.24 * t_pos_g * (1.0 - out_gate)
+        out_gate = out_gate - 0.16 * t_neg_g * out_gate
+        out_gate = out_gate.clamp(0.02, 0.98)
+
     b_pos_g = torch.clamp(b_g, 0.0, 1.0) * voiced_g * breathiness_scale
     b_neg_g = torch.clamp(-b_g, 0.0, 1.0) * voiced_g
     if float(torch.max(b_pos_g + b_neg_g).detach().cpu()) > 1e-7:
         out_gate = out_gate - 0.18 * b_pos_g * out_gate
         out_gate = out_gate + 0.10 * b_neg_g * (1.0 - out_gate)
         out_gate = out_gate.clamp(0.02, 0.98)
+
     f_g = _interp_curve(falsetto_eff, gate_frames, gate.device, gate.dtype) * voiced_g
     x_g = _interp_curve(mixed_eff, gate_frames, gate.device, gate.dtype) * voiced_g
     if float(torch.max(f_g + x_g).detach().cpu()) > 1e-7:
