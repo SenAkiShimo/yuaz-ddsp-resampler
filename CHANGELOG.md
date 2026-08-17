@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.8ai.16
+
+- Updated YT, YO, YX, and YP controls.
+- Added ai.16 runtime on port 47888.
+- Reuses `.yuaz-0.2.8ai14` as read-only state.
+
 ## 0.2.8ai.15
 
 - Updated learned vocal-control scaling.
