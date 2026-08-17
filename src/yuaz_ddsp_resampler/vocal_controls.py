@@ -92,6 +92,15 @@ def _move_toward(value, control, target, amount):
     return out
 
 
+def _periodic_mask(ap_bands, gate, frames, device, dtype):
+    g = _interp_curve(gate, frames, device, dtype).clamp(0.0, 1.0)
+    ap = ap_bands.to(device=device, dtype=dtype)
+    if ap.shape[-1] != int(frames):
+        ap = F.interpolate(ap, size=int(frames), mode="linear", align_corners=False)
+    score = g * (1.0 - ap.mean(dim=1, keepdim=True).clamp(0.0, 1.0))
+    return (score > 0.10).to(dtype)
+
+
 def apply_decoder_vocal_controls(spectral_envelope, ap_bands, gate, f0, frame_controls, sample_rate=24000, learned_controls=()):
     if not frame_controls:
         return spectral_envelope, ap_bands, gate
@@ -121,7 +130,8 @@ def apply_decoder_vocal_controls(spectral_envelope, ap_bands, gate, f0, frame_co
     mixed_voice = _interp_curve(frame_controls.get("mixed_voice"), frames, device, dtype)
     pharyngeal = _interp_curve(frame_controls.get("pharyngeal"), frames, device, dtype)
 
-    tension_eff = torch.sign(tension) * torch.pow(torch.abs(tension), 0.72) * tension_scale
+    source_periodic = _periodic_mask(ap_bands, gate, frames, device, dtype)
+    tension_eff = torch.sign(tension) * torch.pow(torch.abs(tension), 0.72) * tension_scale * source_periodic
     voicing_eff = voicing * voicing_scale
     gender_eff = gender * gender_scale
     mouth_eff = mouth * mouth_scale
