@@ -7,6 +7,24 @@ import threading
 import traceback
 from pathlib import Path
 
+from . import state as _state
+
+_original_resolve_active_state = _state.resolve_active_state
+
+
+def _resolve_active_state_readonly_ai14(bank, allow_legacy=True, verify=True):
+    state, info = _original_resolve_active_state(bank, allow_legacy=allow_legacy, verify=verify)
+    if state is None:
+        return state, info
+    info = dict(info or {})
+    info["source"] = "0.2.8ai.14-readonly"
+    info["read_only_fallback"] = True
+    info["compatibility_source_version"] = "0.2.8ai.14"
+    return state, info
+
+
+_state.resolve_active_state = _resolve_active_state_readonly_ai14
+
 from .core import YuazDDSPResamplerEngine
 from .state import atomic_write_json
 
