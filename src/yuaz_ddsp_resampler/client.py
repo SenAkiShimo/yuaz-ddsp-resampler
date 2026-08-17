@@ -10,8 +10,8 @@ import sys
 import time
 from pathlib import Path
 
-ENGINE_VERSION = "0.2.8ai.14"
-DEFAULT_PORT = 47886
+ENGINE_VERSION = "0.2.8ai.15"
+DEFAULT_PORT = 47887
 
 
 def project_root():
@@ -77,7 +77,6 @@ def ping(host, port):
         return None
 
 
-
 def port_is_open(host, port):
     try:
         with socket.create_connection((host, port), timeout=0.25):
@@ -115,7 +114,7 @@ def start_server(root, config_path, host, port, runtime_id):
         )
     if status is None and port_is_open(host, port):
         raise RuntimeError(
-            f"Port {port} is already occupied by a non-0.2.8ai.14 service. Refusing to start on an ambiguous runtime port."
+            f"Port {port} is already occupied by a non-0.2.8ai.15 service. Refusing to start on an ambiguous runtime port."
         )
 
     lock = root / ".engine-start.lock"
@@ -141,9 +140,6 @@ def start_server(root, config_path, host, port, runtime_id):
             if stale:
                 lock.unlink(missing_ok=True)
                 continue
-            # Another live client owns startup. Keep checking instead of giving up;
-            # if that owner stalls, the lock becomes stale after 20 seconds and
-            # this client can recover it.
             time.sleep(0.2)
             continue
 
