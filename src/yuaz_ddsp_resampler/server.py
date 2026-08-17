@@ -28,7 +28,7 @@ _state.resolve_active_state = _resolve_active_state_readonly_ai14
 from .core import YuazDDSPResamplerEngine
 from .state import atomic_write_json
 
-ENGINE_VERSION = "0.2.8ai.15"
+ENGINE_VERSION = "0.2.8ai.16"
 
 
 class State:
@@ -104,7 +104,7 @@ def main():
     config = json.loads(config_path.read_text(encoding="utf-8"))
     root = config_path.parent.resolve()
     host = config.get("host", "127.0.0.1")
-    port = int(config.get("port", 47887))
+    port = int(config.get("port", 47888))
     State.runtime_id = str(config.get("runtime_id") or ENGINE_VERSION)
     State.runtime_root = root
     pidfile = root / "engine.pid"
