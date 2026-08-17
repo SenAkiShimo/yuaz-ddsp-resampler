@@ -14,7 +14,8 @@ import json,sys,tempfile
 from pathlib import Path
 from yuaz_ddsp_resampler import client
 from yuaz_ddsp_resampler.ai_vocal_controls import load_ai_control_adapter
-from yuaz_ddsp_resampler.checkpoint_identity import checkpoint_identity_sha
+from yuaz_ddsp_resampler.checkpoint_identity import checkpoint_identity
+from yuaz_ddsp_resampler.checkpoint_registry import load_registry
 from yuaz_ddsp_resampler.state import find_voicebank_for_input, resolve_active_state, build_registry_payload, file_sha256, pcm_fingerprint
 root=Path(sys.argv[1]).resolve()
 wav=Path(sys.argv[2]).resolve()
@@ -66,9 +67,28 @@ else:
             foundation_scopes=[]
         config,_=client.load_config(root)
         checkpoint=Path(config['checkpoint']).expanduser().resolve()
-        current_sha=checkpoint_identity_sha(checkpoint) if checkpoint.is_file() else ''
+        ident=checkpoint_identity(checkpoint) if checkpoint.is_file() else {}
+        current_source_sha=str(ident.get('source_checkpoint_sha256') or '')
+        current_runtime_sha=str(ident.get('runtime_sha256') or '')
         foundation_sha=str(foundation_meta.get('checkpoint_sha256') or '')
         foundation_backend=str(foundation_meta.get('feature_backend') or '')
+        registry_matches=[]
+        for model_id,item in (load_registry().get('models') or {}).items():
+            matched=[]
+            for key in ('runtime_sha256','source_input_runtime_sha256','source_checkpoint_sha256'):
+                if foundation_sha and str(item.get(key) or '')==foundation_sha:
+                    matched.append(key)
+            if matched:
+                registry_matches.append({
+                    'model_id':model_id,
+                    'matched_fields':matched,
+                    'source_checkpoint_sha256':item.get('source_checkpoint_sha256'),
+                    'runtime_sha256':item.get('runtime_sha256'),
+                    'source_input_runtime_sha256':item.get('source_input_runtime_sha256'),
+                    'source_checkpoint':item.get('source_checkpoint'),
+                    'source_step':item.get('source_step'),
+                })
+        registry_same_source=any(str(x.get('source_checkpoint_sha256') or '')==current_source_sha for x in registry_matches)
         print(json.dumps({
             'state':True,
             'bank':str(bank),
@@ -83,8 +103,12 @@ else:
             'foundation_load_error':foundation_error,
             'foundation_backend':foundation_backend,
             'foundation_checkpoint_sha':foundation_sha,
-            'current_checkpoint_sha':current_sha,
-            'checkpoint_match':bool(foundation_sha and current_sha and foundation_sha==current_sha),
+            'current_source_sha':current_source_sha,
+            'current_runtime_sha':current_runtime_sha,
+            'foundation_matches_current_source':bool(foundation_sha and foundation_sha==current_source_sha),
+            'foundation_matches_current_runtime':bool(foundation_sha and foundation_sha==current_runtime_sha),
+            'registry_matches':registry_matches,
+            'registry_same_source':registry_same_source,
             'foundation_controls':foundation_controls,
             'foundation_modes':foundation_modes,
             'foundation_scopes':foundation_scopes,
