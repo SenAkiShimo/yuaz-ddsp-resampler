@@ -10,7 +10,7 @@ from pathlib import Path
 from .core import YuazDDSPResamplerEngine
 from .state import atomic_write_json
 
-ENGINE_VERSION = "0.2.8ai.14"
+ENGINE_VERSION = "0.2.8ai.15"
 
 
 class State:
@@ -86,7 +86,7 @@ def main():
     config = json.loads(config_path.read_text(encoding="utf-8"))
     root = config_path.parent.resolve()
     host = config.get("host", "127.0.0.1")
-    port = int(config.get("port", 47886))
+    port = int(config.get("port", 47887))
     State.runtime_id = str(config.get("runtime_id") or ENGINE_VERSION)
     State.runtime_root = root
     pidfile = root / "engine.pid"
