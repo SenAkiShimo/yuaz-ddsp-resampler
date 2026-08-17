@@ -13,10 +13,13 @@ export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 import json,sys,tempfile
 from pathlib import Path
 from yuaz_ddsp_resampler import client
+from yuaz_ddsp_resampler.ai_vocal_controls import load_ai_control_adapter
+from yuaz_ddsp_resampler.checkpoint_identity import checkpoint_identity_sha
 from yuaz_ddsp_resampler.state import find_voicebank_for_input, resolve_active_state, build_registry_payload, file_sha256, pcm_fingerprint
 root=Path(sys.argv[1]).resolve()
 wav=Path(sys.argv[2]).resolve()
 bank=find_voicebank_for_input(wav)
+meta={}
 if bank is None:
     print(json.dumps({'state':False,'reason':'voicebank-not-found'},separators=(',',':')))
 else:
@@ -37,12 +40,35 @@ else:
             except Exception:
                 runtime_record={}
         meta_path=state/'ai_phonation_training.ai14.json'
-        meta={}
         if meta_path.is_file():
             try:
                 meta=json.loads(meta_path.read_text(encoding='utf-8'))
             except Exception:
                 meta={}
+        source=Path(str(meta.get('source') or '')).expanduser()
+        foundation_meta={}
+        foundation_error=None
+        if source.is_file():
+            try:
+                model,foundation_meta=load_ai_control_adapter(source,device='cpu',expected_controls=('tension','voicing'))
+                foundation_controls=list(getattr(model,'control_names',()))
+                foundation_modes=list(getattr(model,'control_modes',()))
+                foundation_scopes=list(getattr(model,'output_scopes',()))
+                del model
+            except Exception as exc:
+                foundation_controls=[]
+                foundation_modes=[]
+                foundation_scopes=[]
+                foundation_error=str(exc)
+        else:
+            foundation_controls=[]
+            foundation_modes=[]
+            foundation_scopes=[]
+        config,_=client.load_config(root)
+        checkpoint=Path(config['checkpoint']).expanduser().resolve()
+        current_sha=checkpoint_identity_sha(checkpoint) if checkpoint.is_file() else ''
+        foundation_sha=str(foundation_meta.get('checkpoint_sha256') or '')
+        foundation_backend=str(foundation_meta.get('feature_backend') or '')
         print(json.dumps({
             'state':True,
             'bank':str(bank),
@@ -53,6 +79,15 @@ else:
             'phonation_reason':meta.get('reason'),
             'phonation_source':meta.get('source'),
             'phonation_error':meta.get('error'),
+            'foundation_exists':source.is_file(),
+            'foundation_load_error':foundation_error,
+            'foundation_backend':foundation_backend,
+            'foundation_checkpoint_sha':foundation_sha,
+            'current_checkpoint_sha':current_sha,
+            'checkpoint_match':bool(foundation_sha and current_sha and foundation_sha==current_sha),
+            'foundation_controls':foundation_controls,
+            'foundation_modes':foundation_modes,
+            'foundation_scopes':foundation_scopes,
             'fresh_record_phonation':bool(record.get('ai_phonation_adapter')),
             'runtime_registry':runtime_path.is_file(),
             'runtime_record_phonation':bool(runtime_record.get('ai_phonation_adapter')),
