@@ -10,8 +10,8 @@ import sys
 import time
 from pathlib import Path
 
-ENGINE_VERSION = "0.2.8ai.15"
-DEFAULT_PORT = 47887
+ENGINE_VERSION = "0.2.8ai.16"
+DEFAULT_PORT = 47888
 
 
 def project_root():
@@ -114,7 +114,7 @@ def start_server(root, config_path, host, port, runtime_id):
         )
     if status is None and port_is_open(host, port):
         raise RuntimeError(
-            f"Port {port} is already occupied by a non-0.2.8ai.15 service. Refusing to start on an ambiguous runtime port."
+            f"Port {port} is already occupied by a non-0.2.8ai.16 service. Refusing to start on an ambiguous runtime port."
         )
 
     lock = root / ".engine-start.lock"
