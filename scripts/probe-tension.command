@@ -20,7 +20,13 @@ host=config.get('host','127.0.0.1')
 port=int(config.get('port',client.DEFAULT_PORT))
 runtime_id=str(config.get('runtime_id') or client.ENGINE_VERSION)
 status=client.ping(host,port)
-if not client._status_matches(status,runtime_id,root):
+ready=bool(
+    status
+    and status.get('ready')
+    and status.get('engine_version') == client.ENGINE_VERSION
+    and status.get('runtime_id') == runtime_id
+)
+if not ready:
     client.start_server(root,config_path,host,port,runtime_id)
 for value in (-100,0,100):
     with tempfile.NamedTemporaryFile(suffix='.wav',delete=False) as f:
