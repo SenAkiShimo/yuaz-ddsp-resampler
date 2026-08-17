@@ -15,6 +15,7 @@ assert 'DEFAULT_PORT = 47888' in client
 assert 'ENGINE_VERSION = "0.2.8ai.16"' in server
 controls=(root/'src/yuaz_ddsp_resampler/ai_vocal_controls.py').read_text()
 assert 'mask = (strength > 1e-6).to(c.dtype) * voiced' in controls
+assert 'control_gate_mode": "periodic-active"' in controls
 assert 'mask = strength * voiced' not in controls
 vocal=(root/'src/yuaz_ddsp_resampler/vocal_controls.py').read_text()
 for expected in (
@@ -23,6 +24,7 @@ for expected in (
     'mouth_scale = carrier("mouth", 0.95)',
     'mixed_scale = carrier("mixed_voice", 0.95, 0.95)',
     'pharyngeal_scale = carrier("pharyngeal", 0.95, 0.95)',
+    'source_periodic = _periodic_mask(ap_bands, gate, frames, device, dtype)',
     'out_gate = out_gate + 0.62 * t_pos_g * (1.0 - out_gate)',
     'out_ap = out_ap - 0.58 * t_pos * tension_ap_shape * out_ap',
     'out_gate = out_gate + 0.48 * x_g * (1.0 - out_gate)',
