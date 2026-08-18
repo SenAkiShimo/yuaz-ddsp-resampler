@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.8ai.16
+
+- Updated YT, YO, YX, and YP controls.
+- Added ai.16 runtime on port 47888.
+- Reuses `.yuaz-0.2.8ai14` as read-only state.
+
+## 0.2.8ai.15
+
+- Updated learned vocal-control scaling.
+- Increased deterministic carrier strength for weak control axes.
+- Updated YT tension behavior.
+- Added ai.15 runtime on port 47887.
+- Reuses `.yuaz-0.2.8ai14` as read-only state.
+- Removes v0.2.8ai.13 during installation.
+
 ## 0.2.8ai.14
 
 - Added probing, importing, compact runtime extraction, listing, and selection for compatible Yuaz base checkpoints.

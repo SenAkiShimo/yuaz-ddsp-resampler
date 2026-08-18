@@ -85,8 +85,6 @@ class AIControlAdapter(nn.Module):
             nn.init.zeros_(layer.bias)
         nn.init.zeros_(self.output_proj.weight)
         nn.init.zeros_(self.output_proj.bias)
-        # Runtime-only calibration. Training uses predict_residuals() directly and
-        # is therefore unaffected by these gains.
         self.runtime_gain = 1.0
         self.runtime_gain_cap = 4.0
         self.runtime_effect_floor = 0.055
@@ -125,7 +123,7 @@ class AIControlAdapter(nn.Module):
         da = y[:, self.spectral_bands:self.spectral_bands + self.ap_bands]
         dg = y[:, -1:]
         strength = torch.amax(torch.abs(c), dim=1, keepdim=True)
-        mask = strength * voiced
+        mask = (strength > 1e-6).to(c.dtype) * voiced
         ds = ds * mask if "spectral" in self.output_scopes else torch.zeros_like(ds)
         da = da * mask if "ap" in self.output_scopes else torch.zeros_like(da)
         dg = dg * mask if "gate" in self.output_scopes else torch.zeros_like(dg)
@@ -133,7 +131,6 @@ class AIControlAdapter(nn.Module):
 
     def apply(self, spectral_envelope, ap_bands, gate, f0, controls):
         ds, da, dg = self.predict_residuals(spectral_envelope, ap_bands, gate, f0, controls)
-        # Apply bounded runtime calibration when a learned residual is too small.
         with torch.no_grad():
             rms_s = float(torch.sqrt(torch.mean(torch.tanh(ds).pow(2)) + 1e-12).cpu()) if "spectral" in self.output_scopes else 0.0
             rms_a = float(torch.sqrt(torch.mean(torch.tanh(da).pow(2)) + 1e-12).cpu()) if "ap" in self.output_scopes else 0.0
@@ -159,8 +156,8 @@ class AIControlAdapter(nn.Module):
             cs.append(c)
             active_values[name] = float(torch.max(torch.abs(c)).detach().cpu())
         activity = torch.amax(torch.abs(torch.cat(cs, dim=1)), dim=1, keepdim=True)
-        voiced = (_resize_time(f0, frames) > 1.0)
-        active_s = (activity > 0) & voiced
+        f = _resize_time(f0, frames)
+        active_s = (activity > 0) & (f > 1.0)
         active_ap = _resize_time(active_s.to(ap_bands.dtype), ap_bands.shape[-1]) > 0.5
         active_gate = _resize_time(active_s.to(gate.dtype), gate.shape[-1]) > 0.5
         out_s = torch.where(active_s, out_s.clamp(min=1e-7), spectral_envelope)
@@ -176,6 +173,7 @@ class AIControlAdapter(nn.Module):
                 "raw_ap_rms": rms_a,
                 "raw_gate_rms": rms_g,
                 "runtime_gain": float(gain),
+                "control_gate_mode": "source-tension-active-voiced",
                 "applied_spectral_log_rms": float(torch.sqrt(torch.mean(ds_out.pow(2)) + 1e-12).cpu()),
                 "applied_ap_rms": float(torch.sqrt(torch.mean(da_out.pow(2)) + 1e-12).cpu()),
                 "applied_gate_rms": float(torch.sqrt(torch.mean(dg_out.pow(2)) + 1e-12).cpu()),
@@ -226,7 +224,6 @@ def load_ai_control_adapter(path, device="cpu", expected_controls=None):
     ).to(device)
     model.load_state_dict(payload["state_dict"], strict=True)
     metadata = dict(payload.get("metadata") or {})
-    # Legacy checkpoints use conservative pack-specific calibration defaults.
     defaults = {
         ("breathiness", "falsetto", "mixed_voice", "pharyngeal"): 2.15,
         ("gender_formant",): 2.10,

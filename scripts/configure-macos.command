@@ -47,8 +47,8 @@ config={
  "base_checkpoint_model_id":m['model_id'], "base_checkpoint_source_name":m.get('source_checkpoint'),
  "base_checkpoint_sha256":m['source_checkpoint_sha256'], "base_checkpoint_runtime_sha256":m['runtime_sha256'],
  "base_checkpoint_step":m.get('source_step'), "base_checkpoint_registry":str(Path(m['runtime_path']).parent.parent/'registry.json'),
- "host":"127.0.0.1", "port":47886, "engine_version":"0.2.8ai.14", "runtime_id":"yuaz-0.2.8ai.14-control-v14",
- "acoustic_base":"0.2.8ai.14-checkpoint-isolated", "transition_ms":70.0, "use_rvq":False,
+ "host":"127.0.0.1", "port":47888, "engine_version":"0.2.8ai.16", "runtime_id":"yuaz-0.2.8ai.16-control-separation-v16",
+ "acoustic_base":"0.2.8ai.14-state-plus-ai16-control-runtime", "transition_ms":70.0, "use_rvq":False,
  "output_sr":44100, "ddsp_synthesis_sr":48000, "ddsp_fullband_crossover_start_hz":8800.0,
  "ddsp_fullband_crossover_full_hz":12100.0, "ai12_upperband_head_enabled":True,
  "ai12_upperband_head_start_hz":8400.0, "ai12_upperband_head_full_hz":12400.0,
@@ -56,16 +56,16 @@ config={
  "normalize_voicebank_loudness":True, "normalization_target_dbfs":-18.0, "normalization_peak_ceiling_dbfs":-1.0,
  "normalization_peak_guard_knee_db":3.0, "normalization_emergency_max_abs_gain_db":30.0, "normalization_tolerance_db":0.05,
  "enable_fidelity_refiner":True, "fidelity_residual_hard_limit":0.085,
- "registry_path":str(Path(sys.argv[3]).expanduser().resolve()), "state_namespace":".yuaz-0.2.8ai14",
- "previous_028ai13_readonly_state_namespace":".yuaz-0.2.8ai13", "preserve_ai13":True,
+ "registry_path":str(Path(sys.argv[3]).expanduser().resolve()),
+ "state_namespace":".yuaz-0.2.8ai14", "state_access":"read-only-ai14-compatibility",
+ "preserve_ai14":True, "allow_ai16_voicebank_training":False,
  "trained_artifact_suffix":".ai14", "ai_control_model_policy":"checkpoint-matched-only"
 }
 Path('config.json').write_text(json.dumps(config,indent=2),encoding='utf-8')
 print('Wrote config.json')
 print('Base model:',config['base_checkpoint_model_id'],'step',config['base_checkpoint_step'])
-print('ai.13 preservation: ENABLED; no migration and no purge')
-print('ai.14 state namespace:',config['state_namespace'])
-print('ai.14 port:',config['port'])
+print('ai.14 state: READ-ONLY')
+print('ai.16 port:',config['port'])
 PY
 rm -f "$IMPORT_OUT"
 chmod +x yuaz-ddsp-resampler scripts/*.command *.command 2>/dev/null || true
