@@ -35,11 +35,13 @@ G=torch.from_numpy(feat['gate'][:,:T]).unsqueeze(0).float()
 SRCF0=torch.from_numpy(feat['f0'][:,:T]).unsqueeze(0).float()
 F0=torch.full((1,1,T),261.625565)
 strict=(SRCF0>1.0)
-score_all=G.clamp(0,1)*(1-AP.mean(dim=1,keepdim=True).clamp(0,1))
-score_low4=G.clamp(0,1)*(1-AP[:,:4].mean(dim=1,keepdim=True).clamp(0,1))
-score_low8=G.clamp(0,1)*(1-AP[:,:8].mean(dim=1,keepdim=True).clamp(0,1))
-score_min=G.clamp(0,1)*(1-AP.amin(dim=1,keepdim=True).clamp(0,1))
-score_q25=G.clamp(0,1)*(1-torch.quantile(AP,0.25,dim=1,keepdim=True).clamp(0,1))
+scores={
+    'all':G.clamp(0,1)*(1-AP.mean(dim=1,keepdim=True).clamp(0,1)),
+    'low4':G.clamp(0,1)*(1-AP[:,:4].mean(dim=1,keepdim=True).clamp(0,1)),
+    'low8':G.clamp(0,1)*(1-AP[:,:8].mean(dim=1,keepdim=True).clamp(0,1)),
+    'min':G.clamp(0,1)*(1-AP.amin(dim=1,keepdim=True).clamp(0,1)),
+    'q25':G.clamp(0,1)*(1-torch.quantile(AP,0.25,dim=1,keepdim=True).clamp(0,1)),
+}
 def metrics(score,threshold):
     pred=score>threshold
     tp=float((pred&strict).float().sum())
@@ -47,27 +49,21 @@ def metrics(score,threshold):
     fn=float((~pred&strict).float().sum())
     precision=tp/max(1.0,tp+fp)
     recall=tp/max(1.0,tp+fn)
-    return {
-        'fraction':float(pred.float().mean()),
-        'precision_vs_source_f0':precision,
-        'recall_vs_source_f0':recall,
-    }
+    f1=2*precision*recall/max(1e-12,precision+recall)
+    return {'threshold':threshold,'fraction':float(pred.float().mean()),'precision':precision,'recall':recall,'f1':f1}
+thresholds=(0.002,0.004,0.006,0.008,0.010,0.015,0.020,0.030,0.040,0.060,0.080)
+best={}
+for name,score in scores.items():
+    rows=[metrics(score,t) for t in thresholds]
+    best[name]=max(rows,key=lambda x:x['f1'])
 print(json.dumps({
     'frames':T,
     'source_f0_voiced_fraction':float(strict.float().mean()),
     'gate_mean':float(G.mean()),
     'ap_mean':float(AP.mean()),
     'ap_band_means':[float(x) for x in AP.mean(dim=(0,2))],
-    'all_mean':metrics(score_all,0.10),
-    'low4_mean':metrics(score_low4,0.10),
-    'low8_mean':metrics(score_low8,0.10),
-    'min_band':metrics(score_min,0.10),
-    'q25':metrics(score_q25,0.10),
-    'score_all_max':float(score_all.max()),
-    'score_low4_max':float(score_low4.max()),
-    'score_low8_max':float(score_low8.max()),
-    'score_min_max':float(score_min.max()),
-    'score_q25_max':float(score_q25.max()),
+    'best_thresholds':best,
+    'score_max':{k:float(v.max()) for k,v in scores.items()},
 },separators=(',',':')))
 for value in (-1.0,1.0):
     controls={'tension':torch.full((1,1,T),value),'voicing':torch.zeros((1,1,T))}
