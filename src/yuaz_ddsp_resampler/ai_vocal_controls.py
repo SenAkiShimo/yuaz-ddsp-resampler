@@ -99,7 +99,6 @@ class AIControlAdapter(nn.Module):
         g = _resize_time(gate, frames)
         f = _resize_time(f0, frames)
         voiced = (f > 1.0).to(f.dtype)
-        periodic = (g.clamp(0.0, 1.0) * (1.0 - ap.mean(dim=1, keepdim=True).clamp(0.0, 1.0)) > 0.10).to(f.dtype)
         log_f0 = torch.log2(torch.clamp(f, min=40.0) / 220.0) / 3.0
         log_f0 = torch.clamp(log_f0, -1.5, 1.5) * voiced
         cs = []
@@ -111,7 +110,7 @@ class AIControlAdapter(nn.Module):
                 c = torch.clamp(c, -1.0, 1.0)
             cs.append(c)
         c = torch.cat(cs, dim=1)
-        return torch.cat([log_s, ap, g, log_f0, c], dim=1), c, voiced * periodic
+        return torch.cat([log_s, ap, g, log_f0, c], dim=1), c, voiced
 
     def predict_residuals(self, spectral_envelope, ap_bands, gate, f0, controls):
         x, c, voiced = self._context(spectral_envelope, ap_bands, gate, f0, controls)
@@ -158,10 +157,7 @@ class AIControlAdapter(nn.Module):
             active_values[name] = float(torch.max(torch.abs(c)).detach().cpu())
         activity = torch.amax(torch.abs(torch.cat(cs, dim=1)), dim=1, keepdim=True)
         f = _resize_time(f0, frames)
-        ap = _resize_freq(_resize_time(ap_bands, frames), self.ap_bands)
-        g = _resize_time(gate, frames)
-        periodic = g.clamp(0.0, 1.0) * (1.0 - ap.mean(dim=1, keepdim=True).clamp(0.0, 1.0)) > 0.10
-        active_s = (activity > 0) & (f > 1.0) & periodic
+        active_s = (activity > 0) & (f > 1.0)
         active_ap = _resize_time(active_s.to(ap_bands.dtype), ap_bands.shape[-1]) > 0.5
         active_gate = _resize_time(active_s.to(gate.dtype), gate.shape[-1]) > 0.5
         out_s = torch.where(active_s, out_s.clamp(min=1e-7), spectral_envelope)
@@ -177,7 +173,7 @@ class AIControlAdapter(nn.Module):
                 "raw_ap_rms": rms_a,
                 "raw_gate_rms": rms_g,
                 "runtime_gain": float(gain),
-                "control_gate_mode": "periodic-active",
+                "control_gate_mode": "source-tension-active-voiced",
                 "applied_spectral_log_rms": float(torch.sqrt(torch.mean(ds_out.pow(2)) + 1e-12).cpu()),
                 "applied_ap_rms": float(torch.sqrt(torch.mean(da_out.pow(2)) + 1e-12).cpu()),
                 "applied_gate_rms": float(torch.sqrt(torch.mean(dg_out.pow(2)) + 1e-12).cpu()),

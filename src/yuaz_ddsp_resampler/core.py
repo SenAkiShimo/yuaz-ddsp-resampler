@@ -1735,6 +1735,11 @@ class YuazDDSPResamplerEngine:
                 frame_controls = controls.frame_controls(
                     target_frames, self.device, f0_t.dtype, curves=req.get("control_curves")
                 )
+                if "tension" in frame_controls:
+                    source_voiced = torch.from_numpy((src_f0_raw > 1.0).astype(np.float32)).view(1, 1, -1).to(
+                        device=self.device, dtype=f0_t.dtype
+                    )
+                    frame_controls["tension"] = frame_controls["tension"] * source_voiced
             canonical_template = self._canonical_articulation_for_variant(bank_record, variant)
             for pack in (ai_control_adapter or []):
                 pack.last_effect_stats = {}
