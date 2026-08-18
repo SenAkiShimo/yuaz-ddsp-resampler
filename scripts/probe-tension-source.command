@@ -32,15 +32,42 @@ T=min(feat['log_spec'].shape[-1],max(1,int(round(native.sample_rate/native.hop))
 S=torch.from_numpy(feat['log_spec'][:,:T]).unsqueeze(0).exp().float()
 AP=torch.from_numpy(feat['ap'][:,:T]).unsqueeze(0).float()
 G=torch.from_numpy(feat['gate'][:,:T]).unsqueeze(0).float()
+SRCF0=torch.from_numpy(feat['f0'][:,:T]).unsqueeze(0).float()
 F0=torch.full((1,1,T),261.625565)
-score=G.clamp(0,1)*(1-AP.mean(dim=1,keepdim=True).clamp(0,1))
+strict=(SRCF0>1.0)
+score_all=G.clamp(0,1)*(1-AP.mean(dim=1,keepdim=True).clamp(0,1))
+score_low4=G.clamp(0,1)*(1-AP[:,:4].mean(dim=1,keepdim=True).clamp(0,1))
+score_low8=G.clamp(0,1)*(1-AP[:,:8].mean(dim=1,keepdim=True).clamp(0,1))
+score_min=G.clamp(0,1)*(1-AP.amin(dim=1,keepdim=True).clamp(0,1))
+score_q25=G.clamp(0,1)*(1-torch.quantile(AP,0.25,dim=1,keepdim=True).clamp(0,1))
+def metrics(score,threshold):
+    pred=score>threshold
+    tp=float((pred&strict).float().sum())
+    fp=float((pred&~strict).float().sum())
+    fn=float((~pred&strict).float().sum())
+    precision=tp/max(1.0,tp+fp)
+    recall=tp/max(1.0,tp+fn)
+    return {
+        'fraction':float(pred.float().mean()),
+        'precision_vs_source_f0':precision,
+        'recall_vs_source_f0':recall,
+    }
 print(json.dumps({
     'frames':T,
+    'source_f0_voiced_fraction':float(strict.float().mean()),
     'gate_mean':float(G.mean()),
     'ap_mean':float(AP.mean()),
-    'periodic_score_mean':float(score.mean()),
-    'periodic_score_max':float(score.max()),
-    'periodic_fraction_gt_010':float((score>0.10).float().mean()),
+    'ap_band_means':[float(x) for x in AP.mean(dim=(0,2))],
+    'all_mean':metrics(score_all,0.10),
+    'low4_mean':metrics(score_low4,0.10),
+    'low8_mean':metrics(score_low8,0.10),
+    'min_band':metrics(score_min,0.10),
+    'q25':metrics(score_q25,0.10),
+    'score_all_max':float(score_all.max()),
+    'score_low4_max':float(score_low4.max()),
+    'score_low8_max':float(score_low8.max()),
+    'score_min_max':float(score_min.max()),
+    'score_q25_max':float(score_q25.max()),
 },separators=(',',':')))
 for value in (-1.0,1.0):
     controls={'tension':torch.full((1,1,T),value),'voicing':torch.zeros((1,1,T))}
