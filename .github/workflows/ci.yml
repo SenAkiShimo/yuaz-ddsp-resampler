@@ -12,7 +12,4 @@ jobs:
       - name: Python syntax
         run: python3 -m compileall -q src/yuaz_ddsp_resampler
       - name: Shell syntax
-        run: |
-          for f in *.command scripts/*.command; do
-            bash -n "$f"
-          done
+        run: find commands scripts -type f -name '*.command' -exec bash -n {} \;
