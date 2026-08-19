@@ -2,12 +2,28 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PY="$ROOT/.venv/bin/python"
-[ -x "$PY" ] || exit 1
-WAV="${1:-}"
-if [ -z "$WAV" ]; then
-  read -r WAV
+[ -x "$PY" ] || { echo "Python not found: $PY" >&2; exit 1; }
+INPUT="${1:-}"
+if [ -z "$INPUT" ]; then
+  read -r INPUT
 fi
-[ -f "$WAV" ] || exit 1
+INPUT="${INPUT%/}"
+WAV="$INPUT"
+if [ -d "$INPUT" ]; then
+  mapfile -t CANDIDATES < <(find "$INPUT" -type f -name 'additional.wav' | sort)
+  if [ "${#CANDIDATES[@]}" -eq 0 ]; then
+    mapfile -t CANDIDATES < <(find "$INPUT" -type f \( -iname '*.wav' -o -iname '*.wave' \) | sort)
+  fi
+  if [ "${#CANDIDATES[@]}" -eq 0 ]; then
+    echo "No WAV found under voicebank: $INPUT" >&2
+    exit 1
+  fi
+  WAV="${CANDIDATES[0]}"
+  echo "Selected WAV: $WAV"
+elif [ ! -f "$WAV" ]; then
+  echo "WAV or voicebank folder not found: $INPUT" >&2
+  exit 1
+fi
 export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 "$PY" - "$ROOT" "$WAV" <<'PY'
 import json,sys
@@ -34,6 +50,7 @@ current_sha=checkpoint_identity_sha(Path(config['checkpoint']).expanduser())
 
 inventory={
     'type':'inventory',
+    'wav':str(wav),
     'voicebank':str(bank or ''),
     'generation':state.name if state else None,
     'state_source':(info or {}).get('source') if info else None,
