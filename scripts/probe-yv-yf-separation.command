@@ -10,15 +10,14 @@ fi
 INPUT="${INPUT%/}"
 WAV="$INPUT"
 if [ -d "$INPUT" ]; then
-  mapfile -t CANDIDATES < <(find "$INPUT" -type f -name 'additional.wav' | sort)
-  if [ "${#CANDIDATES[@]}" -eq 0 ]; then
-    mapfile -t CANDIDATES < <(find "$INPUT" -type f \( -iname '*.wav' -o -iname '*.wave' \) | sort)
+  WAV="$(find "$INPUT" -type f -name 'additional.wav' -print | LC_ALL=C sort | head -n 1)"
+  if [ -z "$WAV" ]; then
+    WAV="$(find "$INPUT" -type f \( -iname '*.wav' -o -iname '*.wave' \) -print | LC_ALL=C sort | head -n 1)"
   fi
-  if [ "${#CANDIDATES[@]}" -eq 0 ]; then
+  if [ -z "$WAV" ]; then
     echo "No WAV found under voicebank: $INPUT" >&2
     exit 1
   fi
-  WAV="${CANDIDATES[0]}"
   echo "Selected WAV: $WAV"
 elif [ ! -f "$WAV" ]; then
   echo "WAV or voicebank folder not found: $INPUT" >&2
