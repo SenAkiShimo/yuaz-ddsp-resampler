@@ -40,8 +40,10 @@ else
 fi
 
 grep -n "phonation-yv-odd-ap-v2" "$DST_AI"
-grep -n "0.58 \* voicing_pos_eff" "$DST_VOCAL"
-grep -n "0.90 \* v_pos" "$DST_VOCAL"
+grep -n 'voicing_pos_scale = carrier("voicing", 1.00)' "$DST_VOCAL"
+grep -n "0.72 \* voicing_pos_eff" "$DST_VOCAL"
+grep -n "0.52 \* v_pos_ap" "$DST_VOCAL"
+grep -n "0.92 \* v_pos" "$DST_VOCAL"
 awk '
   /^  yvc:/ {in_yv=1}
   in_yv {print NR ":" $0}
@@ -49,4 +51,5 @@ awk '
   END {if (!found) exit 1}
 ' "$DST_MANIFEST"
 echo "YV manifest dispatch verified: yvc -> flag YV"
-echo "Restart OpenUtau, then refresh the existing yvc expression descriptor in Project/Track Expressions if it was already present."
+echo "YV positive carrier verified: scale 1.00 with stronger body, periodicity, and closure."
+echo "Restart OpenUtau before listening tests."
