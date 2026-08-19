@@ -157,7 +157,8 @@ class AIControlAdapter(nn.Module):
         _, neg_da, _ = self.predict_residuals(
             spectral_envelope, ap_bands, gate, f0, neg_controls
         )
-        signed_odd_ap = 0.5 * (pos_da - neg_da) * torch.sign(v)
+        yv_neural_ap_scale = 0.25
+        signed_odd_ap = 0.5 * (pos_da - neg_da) * torch.sign(v) * yv_neural_ap_scale
         return t_ds, t_da + signed_odd_ap, t_dg
 
     def apply(self, spectral_envelope, ap_bands, gate, f0, controls):
@@ -169,7 +170,7 @@ class AIControlAdapter(nn.Module):
             ds, da, dg = self.predict_residuals(spectral_envelope, ap_bands, gate, f0, controls)
         else:
             ds, da, dg = routed
-            route_mode = "phonation-yv-odd-ap-v1"
+            route_mode = "phonation-yv-odd-ap-v2"
         with torch.no_grad():
             rms_s = float(torch.sqrt(torch.mean(torch.tanh(ds).pow(2)) + 1e-12).cpu()) if "spectral" in self.output_scopes else 0.0
             rms_a = float(torch.sqrt(torch.mean(torch.tanh(da).pow(2)) + 1e-12).cpu()) if "ap" in self.output_scopes else 0.0
