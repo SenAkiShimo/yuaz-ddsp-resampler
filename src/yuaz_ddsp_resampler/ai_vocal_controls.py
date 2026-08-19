@@ -129,8 +129,47 @@ class AIControlAdapter(nn.Module):
         dg = dg * mask if "gate" in self.output_scopes else torch.zeros_like(dg)
         return ds, da, dg
 
+    def _phonation_routed_residuals(self, spectral_envelope, ap_bands, gate, f0, controls):
+        if tuple(self.control_names) != ("tension", "voicing"):
+            return None
+        frames = spectral_envelope.shape[-1]
+        v = _curve(controls.get("voicing"), frames, spectral_envelope.device, spectral_envelope.dtype)
+        if float(torch.max(torch.abs(v)).detach().cpu()) <= 1e-6:
+            return None
+
+        zero = torch.zeros_like(v)
+        tension_controls = dict(controls)
+        tension_controls["voicing"] = zero
+        t_ds, t_da, t_dg = self.predict_residuals(
+            spectral_envelope, ap_bands, gate, f0, tension_controls
+        )
+
+        magnitude = torch.abs(v)
+        pos_controls = dict(controls)
+        pos_controls["tension"] = zero
+        pos_controls["voicing"] = magnitude
+        neg_controls = dict(controls)
+        neg_controls["tension"] = zero
+        neg_controls["voicing"] = -magnitude
+        _, pos_da, _ = self.predict_residuals(
+            spectral_envelope, ap_bands, gate, f0, pos_controls
+        )
+        _, neg_da, _ = self.predict_residuals(
+            spectral_envelope, ap_bands, gate, f0, neg_controls
+        )
+        signed_odd_ap = 0.5 * (pos_da - neg_da) * torch.sign(v)
+        return t_ds, t_da + signed_odd_ap, t_dg
+
     def apply(self, spectral_envelope, ap_bands, gate, f0, controls):
-        ds, da, dg = self.predict_residuals(spectral_envelope, ap_bands, gate, f0, controls)
+        routed = self._phonation_routed_residuals(
+            spectral_envelope, ap_bands, gate, f0, controls
+        )
+        route_mode = "standard"
+        if routed is None:
+            ds, da, dg = self.predict_residuals(spectral_envelope, ap_bands, gate, f0, controls)
+        else:
+            ds, da, dg = routed
+            route_mode = "phonation-yv-odd-ap-v1"
         with torch.no_grad():
             rms_s = float(torch.sqrt(torch.mean(torch.tanh(ds).pow(2)) + 1e-12).cpu()) if "spectral" in self.output_scopes else 0.0
             rms_a = float(torch.sqrt(torch.mean(torch.tanh(da).pow(2)) + 1e-12).cpu()) if "ap" in self.output_scopes else 0.0
@@ -173,7 +212,8 @@ class AIControlAdapter(nn.Module):
                 "raw_ap_rms": rms_a,
                 "raw_gate_rms": rms_g,
                 "runtime_gain": float(gain),
-                "control_gate_mode": "source-tension-active-voiced",
+                "control_gate_mode": "source-active-voiced",
+                "runtime_route": route_mode,
                 "applied_spectral_log_rms": float(torch.sqrt(torch.mean(ds_out.pow(2)) + 1e-12).cpu()),
                 "applied_ap_rms": float(torch.sqrt(torch.mean(da_out.pow(2)) + 1e-12).cpu()),
                 "applied_gate_rms": float(torch.sqrt(torch.mean(dg_out.pow(2)) + 1e-12).cpu()),
