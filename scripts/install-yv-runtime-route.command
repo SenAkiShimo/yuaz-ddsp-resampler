@@ -21,4 +21,4 @@ else
   echo "No active ai16 runtime on port 47888."
 fi
 
-grep -n "phonation-yv-odd-ap-v1" "$DST"
+grep -n "phonation-yv-odd-ap-v2" "$DST"
