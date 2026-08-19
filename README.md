@@ -16,15 +16,27 @@ v0.2.8ai.14 adds a base-model registry for compatible Yuaz checkpoints while ret
 
 See [`docs/BASE_MODEL_REGISTRY.md`](docs/BASE_MODEL_REGISTRY.md) and [`docs/SIDE_BY_SIDE_SAFETY.md`](docs/SIDE_BY_SIDE_SAFETY.md) for details.
 
+## Commands
+
+Human-facing commands use one launcher. Implementations remain under `scripts/`.
+
+```bash
+./commands/run.command list
+./commands/run.command find yv
+./commands/run.command doctor
+```
+
+See [`commands/README.md`](commands/README.md) for usage and aliases.
+
 ## Model weights
 
 Model checkpoints are **not included in this repository**. Obtain a compatible Yuaz checkpoint from its authorized source and import it locally:
 
 ```bash
-./probe-yuaz-checkpoint.command
-./import-yuaz-checkpoint.command
-./list-yuaz-checkpoints.command
-./select-yuaz-checkpoint.command
+./commands/run.command probe-yuaz-checkpoint
+./commands/run.command import-yuaz-checkpoint
+./commands/run.command list-yuaz-checkpoints
+./commands/run.command select-yuaz-checkpoint
 ```
 
 The importer validates Encoder / DDSP Decoder / RVQ coverage before registering a model. Full training checkpoints may contain additional generator, discriminator, optimizer, and scaler state; these components are not required by the OpenUtau resampler runtime.
@@ -34,12 +46,12 @@ See [`WEIGHTS.md`](WEIGHTS.md) for redistribution and provenance notes.
 ## Install
 
 ```bash
-chmod +x *.command scripts/*.command yuaz-ddsp-resampler
-./setup-macos.command
-./configure-macos.command
-./self-test.command
-./install-openutau-macos.command
-./doctor.command
+chmod +x commands/run.command yuaz-ddsp-resampler
+./commands/run.command setup-macos
+./commands/run.command configure-macos
+./commands/run.command self-test
+./commands/run.command install-openutau-macos
+./commands/run.command doctor
 ```
 
 During configuration, provide either a full compatible Yuaz checkpoint or a compact runtime checkpoint previously produced by the importer.
@@ -47,7 +59,7 @@ During configuration, provide either a full compatible Yuaz checkpoint or a comp
 ## Voicebank preparation
 
 ```bash
-./deep-train-voicebank.command
+./commands/run.command deep-train-voicebank
 ```
 
 v0.2.8ai.14 writes prepared state only under `.yuaz-0.2.8ai14`. It does not migrate, rename, overwrite, or delete `.yuaz-0.2.8ai13` state.
@@ -70,7 +82,7 @@ highband_cache_v3_ai14/
 
 v0.2.8ai.14 uses TCP port `47886`; v0.2.8ai.13 remains on its existing port. Both resampler wrappers can remain installed at the same time.
 
-`purge-previous-version.command` is intentionally disabled in v0.2.8ai.14.
+`purge-previous-version` is intentionally disabled in v0.2.8ai.14.
 
 ## Upstream
 

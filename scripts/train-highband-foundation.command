@@ -1,12 +1,12 @@
 #!/bin/bash
 set -euo pipefail
-ROOT="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DATA_ROOT="${YUAZ_CONTROL_DATASETS:-$HOME/YuazControlDatasets}"
 WORK="$DATA_ROOT/HighBandFoundation"
 PY="$ROOT/.venv/bin/python"
-[ -x "$PY" ] || { echo "Run ./setup-macos.command first."; exit 1; }
+[ -x "$PY" ] || { echo "Run ./commands/run.command setup-macos first."; exit 1; }
 export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
-[ -f "$WORK/shards/manifest.json" ] || { echo "Missing paired shards. Run ./prepare-highband-training.command first."; exit 1; }
+[ -f "$WORK/shards/manifest.json" ] || { echo "Missing paired shards. Run ./commands/run.command prepare-highband-training first."; exit 1; }
 mkdir -p "$ROOT/control_models" "$HOME/Documents/Yuaz-DDSP-Backups/control-models/0.2.8ai.14"
 EPOCHS="${YUAZ_HIGHBAND_EPOCHS:-10}"
 BATCH="${YUAZ_HIGHBAND_BATCH:-4}"
@@ -25,4 +25,4 @@ cp "$OUT" "$HOME/Documents/Yuaz-DDSP-Backups/control-models/0.2.8ai.14/highband_
 shasum -a 256 "$OUT"
 echo
 echo "High-Band Foundation ready: $OUT"
-echo "Next: ./probe-highband-foundation.command"
+echo "Next: ./commands/run.command probe-highband-foundation"

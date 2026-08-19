@@ -1,10 +1,10 @@
 #!/bin/bash
 set -euo pipefail
-ROOT="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PY="$ROOT/.venv/bin/python"
 MODEL="$ROOT/control_models/highband_foundation-v2.pt"
 [ -f "$MODEL" ] || MODEL="$ROOT/control_models/highband_foundation-v1.pt"
-[ -x "$PY" ] || { echo "Run ./setup-macos.command first."; exit 1; }
+[ -x "$PY" ] || { echo "Run ./commands/run.command setup-macos first."; exit 1; }
 [ -f "$MODEL" ] || { echo "Missing highband_foundation-v2.pt/v1.pt"; exit 1; }
 export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 "$PY" - "$MODEL" <<'PY'

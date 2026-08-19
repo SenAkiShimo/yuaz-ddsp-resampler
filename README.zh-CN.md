@@ -16,15 +16,27 @@ v0.2.8ai.14 在保留 48 kHz 合成主体、高频连续性路由与 output-rate
 
 详细设计见 [`docs/BASE_MODEL_REGISTRY.md`](docs/BASE_MODEL_REGISTRY.md) 与 [`docs/SIDE_BY_SIDE_SAFETY.md`](docs/SIDE_BY_SIDE_SAFETY.md)。
 
+## 命令入口
+
+日常调用统一通过一个 launcher；真正实现仍集中在 `scripts/`。
+
+```bash
+./commands/run.command list
+./commands/run.command find yv
+./commands/run.command doctor
+```
+
+完整说明与兼容别名见 [`commands/README.md`](commands/README.md)。
+
 ## 模型权重
 
 **本仓库不包含 Yuaz checkpoint 或其他训练得到的 `.pt` 权重。** 请从具有授权的来源取得兼容 checkpoint，然后在本地导入：
 
 ```bash
-./probe-yuaz-checkpoint.command
-./import-yuaz-checkpoint.command
-./list-yuaz-checkpoints.command
-./select-yuaz-checkpoint.command
+./commands/run.command probe-yuaz-checkpoint
+./commands/run.command import-yuaz-checkpoint
+./commands/run.command list-yuaz-checkpoints
+./commands/run.command select-yuaz-checkpoint
 ```
 
 导入器会先验证 Encoder / DDSP Decoder / RVQ 的结构覆盖率，再注册本地 runtime。完整训练 checkpoint 中可能还包含生成器、判别器、优化器和 scaler 等状态；这些内容不属于 OpenUtau resampler 的运行时依赖。
@@ -34,12 +46,12 @@ v0.2.8ai.14 在保留 48 kHz 合成主体、高频连续性路由与 output-rate
 ## 安装
 
 ```bash
-chmod +x *.command scripts/*.command yuaz-ddsp-resampler
-./setup-macos.command
-./configure-macos.command
-./self-test.command
-./install-openutau-macos.command
-./doctor.command
+chmod +x commands/run.command yuaz-ddsp-resampler
+./commands/run.command setup-macos
+./commands/run.command configure-macos
+./commands/run.command self-test
+./commands/run.command install-openutau-macos
+./commands/run.command doctor
 ```
 
 配置时可以提供完整兼容 checkpoint，也可以提供此前由 importer 生成的紧凑 runtime checkpoint。
@@ -47,7 +59,7 @@ chmod +x *.command scripts/*.command yuaz-ddsp-resampler
 ## 声库准备
 
 ```bash
-./deep-train-voicebank.command
+./commands/run.command deep-train-voicebank
 ```
 
 v0.2.8ai.14 只写入 `.yuaz-0.2.8ai14`，不会迁移、重命名、覆盖或删除 `.yuaz-0.2.8ai13`。
@@ -70,7 +82,7 @@ highband_cache_v3_ai14/
 
 v0.2.8ai.14 使用 TCP 端口 `47886`；v0.2.8ai.13 保持原有端口。两个 OpenUtau resampler wrapper 可以同时保留。
 
-`purge-previous-version.command` 在 v0.2.8ai.14 中被明确禁用。
+`purge-previous-version` 在 v0.2.8ai.14 中被明确禁用。
 
 ## 上游项目
 
