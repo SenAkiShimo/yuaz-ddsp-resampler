@@ -1,20 +1,18 @@
-# Yuaz DDSP Resampler v0.2.8ai.14
+# Yuaz DDSP Resampler v0.2.9
 
 A sample-conditioned Yuaz/DDSP resampler for OpenUtau on macOS.
 
-v0.2.8ai.14 adds a base-model registry for compatible Yuaz checkpoints while retaining the 48 kHz synthesis body, upper-band continuity routing, and output-rate top-band guard introduced in the preceding release.
+v0.2.9 promotes the validated vocal-control runtime, including clearer YF/YB separation and F0-relative falsetto register shaping, while keeping the existing 48 kHz synthesis body and ai.14 voicebank state as read-only compatibility data.
 
 ## Highlights
 
-- Imports structurally compatible Yuaz `.pt` checkpoints without relying on a fixed filename.
-- Extracts a compact runtime checkpoint containing only the Encoder, DDSP Decoder, and RVQ tensors required by the resampler.
-- Records source-checkpoint SHA-256 and training-step provenance.
-- Isolates learned voicebank state by base checkpoint and rejects mismatched state at render time.
-- Installs side by side with v0.2.8ai.13 instead of replacing it.
-- Uses a separate runtime port, OpenUtau wrapper, state namespace, trained-artifact filenames, and cache directories.
-- Keeps destructive predecessor purge disabled in this release.
-
-See [`docs/BASE_MODEL_REGISTRY.md`](docs/BASE_MODEL_REGISTRY.md) and [`docs/SIDE_BY_SIDE_SAFETY.md`](docs/SIDE_BY_SIDE_SAFETY.md) for details.
+- Explicit target-F0-conditioned DDSP resynthesis with source-preserving articulation handling.
+- Voicebank-aware adapters when compatible ai.14 state is available, with safe base-render fallback otherwise.
+- Vocal controls for tension, breathiness, voicing, gender/formant, mouth/resonance, falsetto, mixed voice, and pharyngeal shaping.
+- F0-relative falsetto register shaping designed to remain distinct from breathiness.
+- 48 kHz synthesis body with upper-band continuity routing and terminal guard.
+- Production runtime on TCP port `47888`.
+- Reuses `.yuaz-0.2.8ai14` as read-only compatibility state; v0.2.9 does not retrain or overwrite it.
 
 ## Commands
 
@@ -22,11 +20,9 @@ Human-facing commands use one launcher. Implementations remain under `scripts/`.
 
 ```bash
 ./commands/run.command list
-./commands/run.command find yv
+./commands/run.command find yf
 ./commands/run.command doctor
 ```
-
-See [`commands/README.md`](commands/README.md) for usage and aliases.
 
 ## Model weights
 
@@ -38,8 +34,6 @@ Model checkpoints are **not included in this repository**. Obtain a compatible Y
 ./commands/run.command list-yuaz-checkpoints
 ./commands/run.command select-yuaz-checkpoint
 ```
-
-The importer validates Encoder / DDSP Decoder / RVQ coverage before registering a model. Full training checkpoints may contain additional generator, discriminator, optimizer, and scaler state; these components are not required by the OpenUtau resampler runtime.
 
 See [`WEIGHTS.md`](WEIGHTS.md) for redistribution and provenance notes.
 
@@ -54,35 +48,21 @@ chmod +x commands/run.command yuaz-ddsp-resampler
 ./commands/run.command doctor
 ```
 
-During configuration, provide either a full compatible Yuaz checkpoint or a compact runtime checkpoint previously produced by the importer.
+The production OpenUtau wrapper is `Yuaz-DDSP-Resampler-v0.2.9.sh`.
 
-## Voicebank preparation
+## Clean up older Yuaz resamplers
+
+After installing v0.2.9, older Yuaz runtime directories and OpenUtau wrappers can be removed with:
 
 ```bash
-./commands/run.command deep-train-voicebank
+./commands/run.command cleanup-legacy-yuaz-resamplers
 ```
 
-v0.2.8ai.14 writes prepared state only under `.yuaz-0.2.8ai14`. It does not migrate, rename, overwrite, or delete `.yuaz-0.2.8ai13` state.
+The cleanup command preserves voicebank `.yuaz-*` state, checkpoints, shared environments, and source repositories.
 
-Version-specific learned artifacts include:
+## Voicebank state
 
-```text
-adapter.ai14.pt
-timbre_profiles.ai14.pt
-training.ai14.json
-fidelity_refiner.ai14.pt
-fidelity_training.ai14.json
-deep_validation.ai14.json
-highband_profiles_v3.ai14.json
-cache_ai14/
-highband_cache_v3_ai14/
-```
-
-## OpenUtau coexistence
-
-v0.2.8ai.14 uses TCP port `47886`; v0.2.8ai.13 remains on its existing port. Both resampler wrappers can remain installed at the same time.
-
-`purge-previous-version` is intentionally disabled in v0.2.8ai.14.
+v0.2.9 reads compatible `.yuaz-0.2.8ai14` learned state without modifying it. If no compatible learned state can be resolved, the runtime falls back to the base source-conditioned rendering path instead of failing the OpenUtau render.
 
 ## Upstream
 
