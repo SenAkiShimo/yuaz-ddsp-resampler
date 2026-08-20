@@ -161,13 +161,50 @@ class AIControlAdapter(nn.Module):
         signed_odd_ap = 0.5 * (pos_da - neg_da) * torch.sign(v) * yv_neural_ap_scale
         return t_ds, t_da + signed_odd_ap, t_dg
 
+    def _technique_routed_residuals(self, spectral_envelope, ap_bands, gate, f0, controls):
+        if tuple(self.control_names) != TECHNIQUE_CONTROL_NAMES:
+            return None
+        frames = spectral_envelope.shape[-1]
+        falsetto = _curve(controls.get("falsetto"), frames, spectral_envelope.device, spectral_envelope.dtype)
+        falsetto = torch.clamp(falsetto, 0.0, 1.0)
+        if float(torch.max(falsetto).detach().cpu()) <= 1e-6:
+            return None
+
+        zero = torch.zeros_like(falsetto)
+        base_controls = dict(controls)
+        base_controls["falsetto"] = zero
+        base_ds, base_da, base_dg = self.predict_residuals(
+            spectral_envelope, ap_bands, gate, f0, base_controls
+        )
+        full_ds, full_da, full_dg = self.predict_residuals(
+            spectral_envelope, ap_bands, gate, f0, controls
+        )
+        yf_ds = full_ds - base_ds
+        yf_da = full_da - base_da
+        yf_dg = full_dg - base_dg
+
+        yf_ap_scale = 0.18
+        yf_gate_scale = 0.12
+        return (
+            base_ds + yf_ds,
+            base_da + yf_ap_scale * yf_da,
+            base_dg + yf_gate_scale * yf_dg,
+        )
+
     def apply(self, spectral_envelope, ap_bands, gate, f0, controls):
         routed = self._phonation_routed_residuals(
             spectral_envelope, ap_bands, gate, f0, controls
         )
         route_mode = "standard"
         if routed is None:
-            ds, da, dg = self.predict_residuals(spectral_envelope, ap_bands, gate, f0, controls)
+            routed = self._technique_routed_residuals(
+                spectral_envelope, ap_bands, gate, f0, controls
+            )
+            if routed is None:
+                ds, da, dg = self.predict_residuals(spectral_envelope, ap_bands, gate, f0, controls)
+            else:
+                ds, da, dg = routed
+                route_mode = "technique-yf-register-v1"
         else:
             ds, da, dg = routed
             route_mode = "phonation-yv-odd-ap-v2"
