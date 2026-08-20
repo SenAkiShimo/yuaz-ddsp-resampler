@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.9
+
+- Separated falsetto (YF) from breathiness (YB) more clearly.
+- Added F0-relative harmonic-register shaping for YF.
+- Retained the validated YT, YV, YG, YO, YX, and YP control behavior.
+- Added safer fallback when a voicebank has no compatible ai.14 learned state.
+- Keeps `.yuaz-0.2.8ai14` as read-only compatibility state.
+- Uses the production runtime on port 47888.
+- Added a cleanup command for removing legacy Yuaz runtimes and OpenUtau wrappers while preserving voicebank state and model environments.
+
 ## 0.2.8ai.16
 
 - Updated YT, YO, YX, and YP controls.
