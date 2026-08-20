@@ -109,7 +109,8 @@ def apply_decoder_vocal_controls(spectral_envelope, ap_bands, gate, f0, frame_co
     voicing_neg_scale = carrier("voicing", 0.70)
     gender_scale = carrier("gender_formant", 0.65)
     mouth_scale = carrier("mouth", 0.95)
-    falsetto_scale = carrier("falsetto", 0.52, 0.62)
+    falsetto_spectral_scale = carrier("falsetto", 0.88, 0.96)
+    falsetto_noise_scale = carrier("falsetto", 0.0, 0.18)
     mixed_scale = carrier("mixed_voice", 0.95, 0.95)
     pharyngeal_scale = carrier("pharyngeal", 0.95, 0.95)
 
@@ -127,12 +128,22 @@ def apply_decoder_vocal_controls(spectral_envelope, ap_bands, gate, f0, frame_co
     voicing_neg_eff = torch.clamp(-voicing, 0.0, 1.0) * voicing_neg_scale
     gender_eff = gender * gender_scale
     mouth_eff = mouth * mouth_scale
-    falsetto_eff = torch.clamp(falsetto, 0.0, 1.0) * falsetto_scale
+    falsetto_eff = torch.pow(torch.clamp(falsetto, 0.0, 1.0), 0.72) * falsetto_spectral_scale
+    falsetto_noise_eff = torch.clamp(falsetto, 0.0, 1.0) * falsetto_noise_scale
     mixed_eff = torch.pow(torch.clamp(mixed_voice, 0.0, 1.0), 0.72) * mixed_scale
     pharyngeal_eff = torch.pow(torch.clamp(pharyngeal, 0.0, 1.0), 0.72) * pharyngeal_scale
     voiced = (f0 > 1.0).to(dtype)
     if voiced.shape[-1] != frames:
         voiced = F.interpolate(voiced, size=frames, mode="nearest")
+
+    f0_env = f0.to(device=device, dtype=dtype)
+    if f0_env.dim() == 1:
+        f0_env = f0_env.view(1, 1, -1)
+    elif f0_env.dim() == 2:
+        f0_env = f0_env.unsqueeze(1)
+    if f0_env.shape[-1] != frames:
+        f0_env = F.interpolate(f0_env, size=frames, mode="linear", align_corners=False)
+    f0_env = torch.clamp(f0_env, min=60.0)
 
     out_s = spectral_envelope
 
@@ -172,8 +183,13 @@ def apply_decoder_vocal_controls(spectral_envelope, ap_bands, gate, f0, frame_co
         (0.95 * voicing_pos_eff - 0.38 * voicing_neg_eff) * voicing_shape * voiced
     )
 
-    falsetto_shape = (-0.46 * torch.exp(-0.5 * torch.square((hz - 720.0) / 900.0))
-                      + 0.30 * torch.exp(-0.5 * torch.square((hz - 4200.0) / 2600.0)))
+    harmonic_order = hz / f0_env
+    source_tilt = torch.log2(torch.clamp(harmonic_order, min=1.0)).clamp(0.0, 4.2)
+    h1 = torch.exp(-0.5 * torch.square((harmonic_order - 1.15) / 0.58))
+    h2 = torch.exp(-0.5 * torch.square((harmonic_order - 2.0) / 0.72))
+    register_shape = 0.34 * h1 + 0.10 * h2 - 0.31 * source_tilt
+    falsetto_gain = torch.exp(1.08 * falsetto_eff * register_shape * voiced)
+
     mixed_shape = (
         0.30 * torch.exp(-0.5 * torch.square((hz - 900.0) / 850.0))
         + 0.90 * torch.exp(-0.5 * torch.square((hz - 2600.0) / 1500.0))
@@ -185,10 +201,9 @@ def apply_decoder_vocal_controls(spectral_envelope, ap_bands, gate, f0, frame_co
         + 0.52 * torch.exp(-0.5 * torch.square((hz - 2600.0) / 820.0))
         - 0.20 * torch.exp(-0.5 * torch.square((hz - 5200.0) / 2300.0))
     )
-    technique_gain = torch.exp((0.72 * falsetto_eff * falsetto_shape
-                                + 1.02 * mixed_eff * mixed_shape
+    technique_gain = torch.exp((1.02 * mixed_eff * mixed_shape
                                 + 1.12 * pharyngeal_eff * pharyngeal_shape) * voiced)
-    out_s = (out_s * tension_gain * gender_gain * voicing_gain * technique_gain).clamp(min=1e-7)
+    out_s = (out_s * tension_gain * gender_gain * voicing_gain * falsetto_gain * technique_gain).clamp(min=1e-7)
 
     ap_frames = ap_bands.shape[-1]
     b_ap = _interp_curve(breathiness, ap_frames, ap_bands.device, ap_bands.dtype)
@@ -224,11 +239,11 @@ def apply_decoder_vocal_controls(spectral_envelope, ap_bands, gate, f0, frame_co
         out_ap = out_ap + 0.44 * v_neg_ap * periodic_shape * (1.0 - out_ap)
         out_ap = out_ap.clamp(0.012, 0.988)
 
-    f_ap = _interp_curve(falsetto_eff, ap_frames, ap_bands.device, ap_bands.dtype)
+    f_ap = _interp_curve(falsetto_noise_eff, ap_frames, ap_bands.device, ap_bands.dtype)
     x_ap = _interp_curve(mixed_eff, ap_frames, ap_bands.device, ap_bands.dtype)
     if float(torch.max(f_ap + x_ap).detach().cpu()) > 1e-7:
         air_shape = (0.30 + 0.70 * torch.pow(ap_freq, 0.78)) * voiced_ap
-        out_ap = out_ap + f_ap * 0.24 * air_shape * (1.0 - out_ap)
+        out_ap = out_ap + f_ap * 0.18 * air_shape * (1.0 - out_ap)
         out_ap = out_ap - x_ap * 0.32 * air_shape * out_ap
         out_ap = out_ap.clamp(0.012, 0.988)
 
@@ -262,10 +277,10 @@ def apply_decoder_vocal_controls(spectral_envelope, ap_bands, gate, f0, frame_co
         out_gate = out_gate + 0.10 * b_neg_g * (1.0 - out_gate)
         out_gate = out_gate.clamp(0.02, 0.98)
 
-    f_g = _interp_curve(falsetto_eff, gate_frames, gate.device, gate.dtype) * voiced_g
+    f_g = _interp_curve(falsetto_noise_eff, gate_frames, gate.device, gate.dtype) * voiced_g
     x_g = _interp_curve(mixed_eff, gate_frames, gate.device, gate.dtype) * voiced_g
     if float(torch.max(f_g + x_g).detach().cpu()) > 1e-7:
-        out_gate = out_gate - 0.24 * f_g * out_gate
+        out_gate = out_gate - 0.14 * f_g * out_gate
         out_gate = out_gate + 0.48 * x_g * (1.0 - out_gate)
         out_gate = out_gate.clamp(0.02, 0.98)
     return out_s, out_ap, out_gate

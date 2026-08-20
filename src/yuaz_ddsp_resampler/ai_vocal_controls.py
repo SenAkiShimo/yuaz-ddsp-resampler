@@ -161,13 +161,60 @@ class AIControlAdapter(nn.Module):
         signed_odd_ap = 0.5 * (pos_da - neg_da) * torch.sign(v) * yv_neural_ap_scale
         return t_ds, t_da + signed_odd_ap, t_dg
 
+    def _technique_routed_residuals(self, spectral_envelope, ap_bands, gate, f0, controls):
+        if tuple(self.control_names) != TECHNIQUE_CONTROL_NAMES:
+            return None
+        frames = spectral_envelope.shape[-1]
+        falsetto = _curve(controls.get("falsetto"), frames, spectral_envelope.device, spectral_envelope.dtype)
+        falsetto = torch.clamp(falsetto, 0.0, 1.0)
+        if float(torch.max(falsetto).detach().cpu()) <= 1e-6:
+            return None
+
+        zero = torch.zeros_like(falsetto)
+        base_controls = dict(controls)
+        base_controls["falsetto"] = zero
+        base_ds, base_da, base_dg = self.predict_residuals(
+            spectral_envelope, ap_bands, gate, f0, base_controls
+        )
+        full_ds, full_da, full_dg = self.predict_residuals(
+            spectral_envelope, ap_bands, gate, f0, controls
+        )
+        yf_ds = full_ds - base_ds
+        yf_da = full_da - base_da
+        yf_dg = full_dg - base_dg
+
+        yb_controls = {name: zero for name in self.control_names}
+        yb_controls["breathiness"] = falsetto
+        yb_ds, _, _ = self.predict_residuals(
+            spectral_envelope, ap_bands, gate, f0, yb_controls
+        )
+        dot = torch.sum(yf_ds * yb_ds, dim=1, keepdim=True)
+        norm = torch.sum(yb_ds * yb_ds, dim=1, keepdim=True).clamp(min=1e-8)
+        projection = torch.clamp(dot / norm, min=0.0) * yb_ds
+
+        yf_spectral_overlap = 0.78
+        yf_ap_scale = 0.18
+        yf_gate_scale = 0.12
+        return (
+            base_ds + yf_ds - yf_spectral_overlap * projection,
+            base_da + yf_ap_scale * yf_da,
+            base_dg + yf_gate_scale * yf_dg,
+        )
+
     def apply(self, spectral_envelope, ap_bands, gate, f0, controls):
         routed = self._phonation_routed_residuals(
             spectral_envelope, ap_bands, gate, f0, controls
         )
         route_mode = "standard"
         if routed is None:
-            ds, da, dg = self.predict_residuals(spectral_envelope, ap_bands, gate, f0, controls)
+            routed = self._technique_routed_residuals(
+                spectral_envelope, ap_bands, gate, f0, controls
+            )
+            if routed is None:
+                ds, da, dg = self.predict_residuals(spectral_envelope, ap_bands, gate, f0, controls)
+            else:
+                ds, da, dg = routed
+                route_mode = "technique-yf-register-v2"
         else:
             ds, da, dg = routed
             route_mode = "phonation-yv-odd-ap-v2"

@@ -5,6 +5,7 @@ PY="$ROOT/.venv/bin/python"
 [ -x "$PY" ] || { echo "Python not found: $PY" >&2; exit 1; }
 INPUT="${1:-}"
 if [ -z "$INPUT" ]; then
+  echo "Drop one WAV or voicebank folder here, then press Return:"
   read -r INPUT
 fi
 INPUT="${INPUT%/}"
@@ -88,6 +89,12 @@ F0=torch.from_numpy(np.asarray(feat['f0'],dtype=np.float32)).unsqueeze(0)
 def zeros(names):
     return {n:torch.zeros((1,1,S.shape[-1]),dtype=S.dtype) for n in names}
 
+def all_controls(name,value):
+    names=('tension','breathiness','voicing','gender_formant','mouth','falsetto','mixed_voice','pharyngeal')
+    c={n:torch.zeros((1,1,S.shape[-1]),dtype=S.dtype) for n in names}
+    c[name].fill_(float(value))
+    return c
+
 def raw(pack,name,value):
     c=zeros(pack.control_names); c[name].fill_(float(value))
     with torch.inference_mode():
@@ -101,11 +108,19 @@ def applied(pack,name,value):
     return ds.detach().float(),(oa-AP).detach().float(),(og-G).detach().float()
 
 def carrier(name,value,learned):
-    names=('tension','breathiness','voicing','gender_formant','mouth','falsetto','mixed_voice','pharyngeal')
-    c={n:torch.zeros((1,1,S.shape[-1]),dtype=S.dtype) for n in names}
-    c[name].fill_(float(value))
+    c=all_controls(name,value)
     with torch.inference_mode():
         os,oa,og=apply_decoder_vocal_controls(S,AP,G,F0,c,sample_rate=24000,learned_controls=learned)
+    ds=torch.log(os.clamp(min=1e-7)/S.clamp(min=1e-7))
+    return ds.detach().float(),(oa-AP).detach().float(),(og-G).detach().float()
+
+def final_chain(pack,name,value):
+    c=all_controls(name,value)
+    with torch.inference_mode():
+        os,oa,og=apply_decoder_vocal_controls(
+            S,AP,G,F0,c,sample_rate=24000,learned_controls=pack.control_names
+        )
+        os,oa,og=pack.apply(os,oa,og,F0,c)
     ds=torch.log(os.clamp(min=1e-7)/S.clamp(min=1e-7))
     return ds.detach().float(),(oa-AP).detach().float(),(og-G).detach().float()
 
@@ -129,9 +144,11 @@ if tech_ok:
     yb_raw=raw(tech,'breathiness',1.0); yf_raw=raw(tech,'falsetto',1.0)
     yb_app=applied(tech,'breathiness',1.0); yf_app=applied(tech,'falsetto',1.0)
     yb_car=carrier('breathiness',1.0,tech.control_names); yf_car=carrier('falsetto',1.0,tech.control_names)
+    yb_final=final_chain(tech,'breathiness',1.0); yf_final=final_chain(tech,'falsetto',1.0)
     emit('yb_yf_raw','YB100_vs_YF100',yb_raw,yf_raw)
     emit('yb_yf_applied','YB100_vs_YF100',yb_app,yf_app)
     emit('yb_yf_carrier','YB100_vs_YF100',yb_car,yf_car)
+    emit('yb_yf_final','YB100_vs_YF100',yb_final,yf_final)
 else:
     print(json.dumps({'type':'skip','pair':'YB100_vs_YF100','reason':'technique-pack-missing'},separators=(',',':')))
 
@@ -139,9 +156,11 @@ if phon_ok:
     yv_neg_raw=raw(phon,'voicing',-1.0); yv_pos_raw=raw(phon,'voicing',1.0)
     yv_neg_app=applied(phon,'voicing',-1.0); yv_pos_app=applied(phon,'voicing',1.0)
     yv_neg_car=carrier('voicing',-1.0,phon.control_names); yv_pos_car=carrier('voicing',1.0,phon.control_names)
+    yv_neg_final=final_chain(phon,'voicing',-1.0); yv_pos_final=final_chain(phon,'voicing',1.0)
     emit('yv_raw','YV-100_vs_YV100',yv_neg_raw,yv_pos_raw)
     emit('yv_applied','YV-100_vs_YV100',yv_neg_app,yv_pos_app)
     emit('yv_carrier','YV-100_vs_YV100',yv_neg_car,yv_pos_car)
+    emit('yv_final','YV-100_vs_YV100',yv_neg_final,yv_pos_final)
 else:
     print(json.dumps({'type':'skip','pair':'YV-100_vs_YV100','reason':'phonation-pack-missing'},separators=(',',':')))
 PY
