@@ -183,10 +183,20 @@ class AIControlAdapter(nn.Module):
         yf_da = full_da - base_da
         yf_dg = full_dg - base_dg
 
+        yb_controls = {name: zero for name in self.control_names}
+        yb_controls["breathiness"] = falsetto
+        yb_ds, _, _ = self.predict_residuals(
+            spectral_envelope, ap_bands, gate, f0, yb_controls
+        )
+        dot = torch.sum(yf_ds * yb_ds, dim=1, keepdim=True)
+        norm = torch.sum(yb_ds * yb_ds, dim=1, keepdim=True).clamp(min=1e-8)
+        projection = torch.clamp(dot / norm, min=0.0) * yb_ds
+
+        yf_spectral_overlap = 0.78
         yf_ap_scale = 0.18
         yf_gate_scale = 0.12
         return (
-            base_ds + yf_ds,
+            base_ds + yf_ds - yf_spectral_overlap * projection,
             base_da + yf_ap_scale * yf_da,
             base_dg + yf_gate_scale * yf_dg,
         )
@@ -204,7 +214,7 @@ class AIControlAdapter(nn.Module):
                 ds, da, dg = self.predict_residuals(spectral_envelope, ap_bands, gate, f0, controls)
             else:
                 ds, da, dg = routed
-                route_mode = "technique-yf-register-v1"
+                route_mode = "technique-yf-register-v2"
         else:
             ds, da, dg = routed
             route_mode = "phonation-yv-odd-ap-v2"
