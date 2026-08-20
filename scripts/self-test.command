@@ -15,7 +15,7 @@ assert 'DEFAULT_PORT = 47888' in client
 assert 'ENGINE_VERSION = "0.2.9"' in server
 controls=(root/'src/yuaz_ddsp_resampler/ai_vocal_controls.py').read_text()
 assert 'mask = (strength > 1e-6).to(c.dtype) * voiced' in controls
-assert 'control_gate_mode": "periodic-active"' in controls
+assert 'control_gate_mode": "source-active-voiced"' in controls
 assert 'mask = strength * voiced' not in controls
 vocal=(root/'src/yuaz_ddsp_resampler/vocal_controls.py').read_text()
 for expected in (
