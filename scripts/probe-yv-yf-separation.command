@@ -5,6 +5,7 @@ PY="$ROOT/.venv/bin/python"
 [ -x "$PY" ] || { echo "Python not found: $PY" >&2; exit 1; }
 INPUT="${1:-}"
 if [ -z "$INPUT" ]; then
+  echo "Drop one WAV or voicebank folder here, then press Return:"
   read -r INPUT
 fi
 INPUT="${INPUT%/}"
