@@ -20,4 +20,4 @@ PY
 fi
 pkill -f "yuaz_ddsp_resampler.server --config $ROOT/config.json" 2>/dev/null || true
 rm -f "$ROOT/.engine-start.lock" "$ROOT/engine.pid"
-echo "0.2.8ai.16 engine stopped: $ROOT"
+echo "0.2.9 engine stopped: $ROOT"
