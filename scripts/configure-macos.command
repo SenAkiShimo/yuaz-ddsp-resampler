@@ -47,7 +47,7 @@ config={
  "base_checkpoint_model_id":m['model_id'], "base_checkpoint_source_name":m.get('source_checkpoint'),
  "base_checkpoint_sha256":m['source_checkpoint_sha256'], "base_checkpoint_runtime_sha256":m['runtime_sha256'],
  "base_checkpoint_step":m.get('source_step'), "base_checkpoint_registry":str(Path(m['runtime_path']).parent.parent/'registry.json'),
- "host":"127.0.0.1", "port":47888, "engine_version":"0.2.8ai.16", "runtime_id":"yuaz-0.2.8ai.16-control-separation-v16",
+ "host":"127.0.0.1", "port":47889, "engine_version":"0.2.8ai.16", "runtime_id":"yuaz-0.2.8ai.16-yf-yb-test",
  "acoustic_base":"0.2.8ai.14-state-plus-ai16-control-runtime", "transition_ms":70.0, "use_rvq":False,
  "output_sr":44100, "ddsp_synthesis_sr":48000, "ddsp_fullband_crossover_start_hz":8800.0,
  "ddsp_fullband_crossover_full_hz":12100.0, "ai12_upperband_head_enabled":True,
