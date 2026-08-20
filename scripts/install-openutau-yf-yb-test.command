@@ -52,16 +52,32 @@ PY
 
 rm -rf "$FINAL"
 mv "$TMP" "$FINAL"
+mkdir -p "$FINAL/logs"
 
 cat > "$DEST/$NAME" <<SCRIPT
 #!/bin/bash
-exec "$FINAL/yuaz-ddsp-resampler" "\$@"
+LOG="$FINAL/logs/client.log"
+{
+  printf '\n[%s] OpenUtau invocation\n' "\$(date '+%Y-%m-%d %H:%M:%S')"
+  printf 'pwd=%q\n' "\$PWD"
+  printf 'argc=%d\n' "\$#"
+  i=0
+  for arg in "\$@"; do
+    printf 'arg[%d]=%q\n' "\$i" "\$arg"
+    i=\$((i+1))
+  done
+} >> "\$LOG"
+"$FINAL/yuaz-ddsp-resampler" "\$@" 2>> "\$LOG"
+status=\$?
+printf 'exit=%d\n' "\$status" >> "\$LOG"
+exit "\$status"
 SCRIPT
 chmod +x "$DEST/$NAME"
 cp "$FINAL/resampler-manifest.yaml" "$DEST/${NAME%.sh}.yaml"
 
 echo "Installed test runtime: $FINAL"
 echo "OpenUtau resampler: $DEST/$NAME"
+echo "Client log: $FINAL/logs/client.log"
 echo "Port: 47889"
 echo "PRESERVED: $APP/0.2.8ai.16"
 echo "PRESERVED: .yuaz-0.2.8ai14"
