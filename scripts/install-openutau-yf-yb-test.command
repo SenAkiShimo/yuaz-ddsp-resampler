@@ -9,7 +9,8 @@ APP="$HOME/Library/Application Support/YuazDDSP"
 FINAL="$APP/0.2.8ai.16-yf-yb-test"
 TMP="$APP/.0.2.8ai.16-yf-yb-test-installing-$$"
 DEST="$HOME/Library/OpenUtau/Resamplers"
-NAME="Yuaz-DDSP-Resampler-YF-YB-Test.sh"
+NAME="Yuaz-DDSP-Resampler-YF-YB-Test-R2.sh"
+OLD_NAME="Yuaz-DDSP-Resampler-YF-YB-Test.sh"
 
 python3 - "$SOURCE/config.json" <<'PY'
 import json,sys
@@ -53,12 +54,16 @@ PY
 rm -rf "$FINAL"
 mv "$TMP" "$FINAL"
 mkdir -p "$FINAL/logs"
+LOG="$FINAL/logs/client.log"
+printf '[%s] installed wrapper=%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$DEST/$NAME" > "$LOG"
 
+rm -f "$DEST/$OLD_NAME" "$DEST/${OLD_NAME%.sh}.yaml"
 cat > "$DEST/$NAME" <<SCRIPT
 #!/bin/bash
 LOG="$FINAL/logs/client.log"
 {
   printf '\n[%s] OpenUtau invocation\n' "\$(date '+%Y-%m-%d %H:%M:%S')"
+  printf 'wrapper=%q\n' "\$0"
   printf 'pwd=%q\n' "\$PWD"
   printf 'argc=%d\n' "\$#"
   i=0
@@ -77,7 +82,7 @@ cp "$FINAL/resampler-manifest.yaml" "$DEST/${NAME%.sh}.yaml"
 
 echo "Installed test runtime: $FINAL"
 echo "OpenUtau resampler: $DEST/$NAME"
-echo "Client log: $FINAL/logs/client.log"
+echo "Client log: $LOG"
 echo "Port: 47889"
 echo "PRESERVED: $APP/0.2.8ai.16"
 echo "PRESERVED: .yuaz-0.2.8ai14"
