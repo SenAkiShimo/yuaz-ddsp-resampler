@@ -33,6 +33,21 @@ def _lookup_local_record_runtime_compatible(input_path):
         raise
 
 
+def _state_error_allows_base_fallback(exc):
+    text = str(exc)
+    markers = (
+        "no valid pinned state can be resolved",
+        "no ai.14 base-checkpoint provenance",
+        "trained against a different Yuaz base checkpoint",
+        "Pinned learned-control pack is missing",
+        "Unsupported AI control model format",
+        "AI control model has incompatible controls",
+        "Error(s) in loading state_dict",
+        "size mismatch",
+    )
+    return any(marker in text for marker in markers)
+
+
 _state.resolve_active_state = _resolve_active_state_readonly_ai14
 _state.lookup_local_record = _lookup_local_record_runtime_compatible
 
@@ -143,6 +158,17 @@ def main():
                     ai13_upperband_head_start_hz=config.get("ai13_upperband_head_start_hz", 8200.0),
                     ai13_upperband_head_full_hz=config.get("ai13_upperband_head_full_hz", 13800.0),
                 )
+                original_models_for_input = State.engine._models_for_input
+
+                def models_for_input_runtime_compatible(path):
+                    try:
+                        return original_models_for_input(path)
+                    except RuntimeError as exc:
+                        if _state_error_allows_base_fallback(exc):
+                            return None, None, [], None
+                        raise
+
+                State.engine._models_for_input = models_for_input_runtime_compatible
                 State.ready = True
                 print(f"READY {ENGINE_VERSION} {State.runtime_id} {root}", flush=True)
             except Exception as exc:
