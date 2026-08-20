@@ -10,6 +10,7 @@ from pathlib import Path
 from . import state as _state
 
 _original_resolve_active_state = _state.resolve_active_state
+_original_lookup_local_record = _state.lookup_local_record
 
 
 def _resolve_active_state_readonly_ai14(bank, allow_legacy=True, verify=True):
@@ -23,7 +24,17 @@ def _resolve_active_state_readonly_ai14(bank, allow_legacy=True, verify=True):
     return state, info
 
 
+def _lookup_local_record_runtime_compatible(input_path):
+    try:
+        return _original_lookup_local_record(input_path)
+    except RuntimeError as exc:
+        if "no valid pinned state can be resolved" in str(exc):
+            return None
+        raise
+
+
 _state.resolve_active_state = _resolve_active_state_readonly_ai14
+_state.lookup_local_record = _lookup_local_record_runtime_compatible
 
 from .core import YuazDDSPResamplerEngine
 from .state import atomic_write_json
