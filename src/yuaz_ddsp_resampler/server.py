@@ -54,7 +54,7 @@ _state.lookup_local_record = _lookup_local_record_runtime_compatible
 from .core import YuazDDSPResamplerEngine
 from .state import atomic_write_json
 
-ENGINE_VERSION = "0.2.8ai.16"
+ENGINE_VERSION = "0.2.9"
 
 
 class State:
