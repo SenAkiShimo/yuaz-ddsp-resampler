@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.9
+## v0.2.9 — 2026-08-20
 
 - Separated falsetto (YF) from breathiness (YB) more clearly.
 - Added F0-relative harmonic-register shaping for YF.
