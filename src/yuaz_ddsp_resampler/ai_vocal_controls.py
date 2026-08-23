@@ -133,16 +133,24 @@ class AIControlAdapter(nn.Module):
         if tuple(self.control_names) != ("tension", "voicing"):
             return None
         frames = spectral_envelope.shape[-1]
+        t = _curve(controls.get("tension"), frames, spectral_envelope.device, spectral_envelope.dtype)
         v = _curve(controls.get("voicing"), frames, spectral_envelope.device, spectral_envelope.dtype)
-        if float(torch.max(torch.abs(v)).detach().cpu()) <= 1e-6:
-            return None
-
         zero = torch.zeros_like(v)
         tension_controls = dict(controls)
         tension_controls["voicing"] = zero
         t_ds, t_da, t_dg = self.predict_residuals(
             spectral_envelope, ap_bands, gate, f0, tension_controls
         )
+
+        t_pos = torch.clamp(t, 0.0, 1.0)
+        t_neg = torch.clamp(-t, 0.0, 1.0)
+        t_amount = torch.clamp(t_pos + t_neg, 0.0, 1.0)
+        t_ds = t_ds * (1.0 - t_amount + 0.34 * t_pos + 0.46 * t_neg)
+        t_da = t_da * (1.0 - t_amount + 0.52 * t_pos + 0.58 * t_neg)
+        t_dg = t_dg * (1.0 - t_amount + 0.52 * t_pos + 0.58 * t_neg)
+
+        if float(torch.max(torch.abs(v)).detach().cpu()) <= 1e-6:
+            return t_ds, t_da, t_dg
 
         magnitude = torch.abs(v)
         pos_controls = dict(controls)
