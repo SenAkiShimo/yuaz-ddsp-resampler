@@ -101,14 +101,25 @@ class YuazControls:
                 if name is not None:
                     supplied[name] = value
 
+        def shape_curve(name, value):
+            amount = {
+                "tension": 0.24,
+                "gender_formant": 0.30,
+                "mouth": 0.22,
+            }.get(name, 0.0)
+            if amount > 0.0:
+                value = value * (1.0 - amount * torch.square(torch.abs(value)))
+            return value
+
         def make_curve(name):
             if name not in supplied:
-                return torch.full((1, 1, frames), _clamp(defaults[name]) / 100.0, device=device, dtype=dtype)
+                value = torch.full((1, 1, frames), _clamp(defaults[name]) / 100.0, device=device, dtype=dtype)
+                return shape_curve(name, value)
             value = torch.as_tensor(supplied[name], device=device, dtype=dtype).reshape(1, 1, -1)
             value = torch.clamp(value, -100.0, 100.0) / 100.0
             if value.shape[-1] != frames:
                 value = F.interpolate(value, size=frames, mode="linear", align_corners=False)
-            return value
+            return shape_curve(name, value)
 
         return {name: make_curve(name) for name in defaults}
 

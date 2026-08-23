@@ -174,6 +174,14 @@ def start_server(root, config_path, host, port, runtime_id):
             lock.unlink(missing_ok=True)
 
 
+def _shape_modulation(value):
+    value = max(-100.0, min(100.0, float(value)))
+    if abs(value) < 1e-8:
+        return 0.0
+    sign = 1.0 if value > 0.0 else -1.0
+    return sign * 100.0 * ((abs(value) / 100.0) ** 0.82)
+
+
 def parse_request(argv):
     if len(argv) < 5:
         raise RuntimeError("Expected classic UTAU resampler arguments.")
@@ -182,7 +190,7 @@ def parse_request(argv):
         "input": args[1], "output": args[2], "tone": args[3], "velocity": float(args[4] or 100),
         "flags": args[5] or "", "offset": float(args[6] or 0), "length": float(args[7] or 1000),
         "consonant": float(args[8] or 0), "cutoff": float(args[9] or 0), "volume": float(args[10] or 100),
-        "modulation": float(args[11] or 0), "tempo": args[12] or "!120", "pitch": args[13] or "AA",
+        "modulation": _shape_modulation(args[11] or 0), "tempo": args[12] or "!120", "pitch": args[13] or "AA",
     }
 
 
