@@ -142,12 +142,11 @@ class AIControlAdapter(nn.Module):
             spectral_envelope, ap_bands, gate, f0, tension_controls
         )
 
-        t_pos = torch.clamp(t, 0.0, 1.0)
-        t_neg = torch.clamp(-t, 0.0, 1.0)
-        t_amount = torch.clamp(t_pos + t_neg, 0.0, 1.0)
-        t_ds = t_ds * (1.0 - t_amount + 0.34 * t_pos + 0.46 * t_neg)
-        t_da = t_da * (1.0 - t_amount + 0.52 * t_pos + 0.58 * t_neg)
-        t_dg = t_dg * (1.0 - t_amount + 0.52 * t_pos + 0.58 * t_neg)
+        t_amount = torch.clamp(torch.abs(t), 0.0, 1.0)
+        t_curve = torch.square(t_amount)
+        t_ds = t_ds * torch.clamp(1.0 - 1.25 * t_curve, min=0.24)
+        t_da = t_da * torch.clamp(1.0 - 1.05 * t_curve, min=0.38)
+        t_dg = t_dg * torch.clamp(1.0 - 0.80 * t_curve, min=0.50)
 
         if float(torch.max(torch.abs(v)).detach().cpu()) <= 1e-6:
             return t_ds, t_da, t_dg
