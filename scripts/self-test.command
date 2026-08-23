@@ -24,14 +24,14 @@ require('control_gate_mode": "source-active-voiced"' in controls, 'AI control ga
 require('mask = strength * voiced' not in controls, 'obsolete strength mask still present')
 vocal=(root/'src/yuaz_ddsp_resampler/vocal_controls.py').read_text()
 for label, expected in (
-    ('YT carrier', 'tension_scale = carrier("tension", 0.92)'),
-    ('YG carrier', 'gender_scale = carrier("gender_formant", 0.65)'),
+    ('YT carrier', 'tension_scale = carrier("tension", 0.58)'),
+    ('YG carrier', 'gender_scale = carrier("gender_formant", 0.85)'),
     ('YO carrier', 'mouth_scale = carrier("mouth", 0.95)'),
     ('YF carrier', 'falsetto_spectral_scale = carrier("falsetto", 0.88, 0.96)'),
     ('YX carrier', 'mixed_scale = carrier("mixed_voice", 0.95, 0.95)'),
     ('YP carrier', 'pharyngeal_scale = carrier("pharyngeal", 0.95, 0.95)'),
-    ('YT AP route', 'out_ap = out_ap - 0.58 * t_pos * tension_ap_shape * out_ap'),
-    ('YT gate route', 'out_gate = out_gate + 0.62 * t_pos_g * (1.0 - out_gate)'),
+    ('YT AP route', 'out_ap = out_ap - 0.28 * t_pos * tension_ap_shape * out_ap'),
+    ('YT gate route', 'out_gate = out_gate + 0.28 * t_pos_g * (1.0 - out_gate)'),
     ('YX gate route', 'out_gate = out_gate + 0.48 * x_g * (1.0 - out_gate)'),
     ('YO formant warp', 'shift_hz = (430.0 * f1_weight + 105.0 * f2_weight) * control'),
     ('YF F0-relative register', 'harmonic_order = hz / f0_env'),
