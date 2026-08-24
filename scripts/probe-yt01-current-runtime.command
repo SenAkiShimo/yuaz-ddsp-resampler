@@ -24,10 +24,22 @@ if not log.is_file():
 lines = [line for line in log.read_text(encoding="utf-8", errors="replace").splitlines() if line.strip()]
 if not lines:
     raise SystemExit("render_requests.jsonl is empty. Render one note in OpenUtau first.")
-record = json.loads(lines[-1])
-base = dict(record.get("request") or {})
-if not base.get("input"):
-    raise SystemExit("Latest render log has no input request.")
+base = None
+for line in reversed(lines):
+    try:
+        record = json.loads(line)
+    except Exception:
+        continue
+    request = dict(record.get("request") or {})
+    input_path = request.get("input")
+    if input_path and Path(input_path).expanduser().is_file():
+        base = request
+        break
+if base is None:
+    raise SystemExit(
+        "No logged OpenUtau request still has an existing input WAV. "
+        "Render one note in OpenUtau now, then rerun this probe immediately."
+    )
 
 config, config_path = client.load_config(root)
 host = config.get("host", "127.0.0.1")
