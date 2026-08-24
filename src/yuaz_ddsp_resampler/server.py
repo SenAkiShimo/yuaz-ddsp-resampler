@@ -65,6 +65,7 @@ class State:
     runtime_root = None
     active_renders = 0
     active_lock = threading.Lock()
+    render_lock = threading.Lock()
 
 
 class Handler(socketserver.StreamRequestHandler):
@@ -88,7 +89,8 @@ class Handler(socketserver.StreamRequestHandler):
                 with State.active_lock:
                     State.active_renders += 1
                 try:
-                    response = State.engine.render(request["request"])
+                    with State.render_lock:
+                        response = State.engine.render(request["request"])
                     self._log_request(request["request"], response)
                 finally:
                     with State.active_lock:
