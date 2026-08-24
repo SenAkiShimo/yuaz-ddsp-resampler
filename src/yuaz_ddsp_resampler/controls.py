@@ -72,8 +72,10 @@ class YuazControls:
     def frame_controls(self, frames, device, dtype, curves=None):
         import torch
         import torch.nn.functional as F
+        from .post_gender import set_gender_amount
 
         frames = max(1, int(frames))
+        set_gender_amount(self.gender_formant)
         aliases = {
             "YT": "tension", "tension": "tension",
             "YB": "breathiness", "breathiness": "breathiness",
