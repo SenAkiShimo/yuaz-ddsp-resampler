@@ -12,6 +12,8 @@ from typing import Dict, Tuple
 import numpy as np
 import torch
 
+from .post_gender import apply_context_gender
+
 
 def _smoothstep(x: torch.Tensor) -> torch.Tensor:
     x = torch.clamp(x, 0.0, 1.0)
@@ -38,7 +40,6 @@ def terminal_frequencies(output_sample_rate: int) -> Dict[str, float]:
     harmonic_zero = min(19800.0, nyq * 0.898)
     noise_start = min(18400.0, nyq * 0.835)
     noise_zero = min(21000.0, nyq * 0.953)
-    # Reserve a finite transition band below Nyquist.
     harmonic_zero = min(harmonic_zero, nyq - 900.0)
     noise_zero = min(noise_zero, nyq - 600.0)
     harmonic_start = min(harmonic_start, harmonic_zero - 800.0)
@@ -68,7 +69,6 @@ def apply_upperband_spectral_guard(
     ).view(1, bins, 1)
     tf = terminal_frequencies(output_sample_rate)
 
-    # Keep the body edge unchanged, then reduce the upper band toward Nyquist.
     profile = _piecewise_profile(freqs, [
         (0.0, 1.00),
         (11600.0, 1.00),
@@ -107,7 +107,6 @@ def apply_output_rate_mix_guard(
     ).view(1, bins, 1)
     tf = terminal_frequencies(output_sample_rate)
 
-    # Shared presence slope for harmonic and aperiodic components.
     presence = _piecewise_profile(freqs, [
         (0.0, 1.00),
         (10500.0, 1.00),
@@ -143,6 +142,16 @@ def apply_output_rate_mix_guard(
     }
 
 
+def _final_gender(audio, sample_rate, stats):
+    out, gender = apply_context_gender(audio, sample_rate)
+    result = dict(stats)
+    result["gender_used"] = bool(gender.get("used", False))
+    result["gender_amount"] = float(gender.get("amount", 0.0))
+    result["gender_effective_amount"] = float(gender.get("effective_amount", 0.0))
+    result["gender_formant_semitones"] = float(gender.get("semitones", 0.0))
+    return out, result
+
+
 def apply_output_terminal_guard_numpy(
     audio,
     sample_rate: int,
@@ -150,14 +159,14 @@ def apply_output_terminal_guard_numpy(
 ):
     """Apply the final smooth terminal guard after high-band refinement."""
     y = np.asarray(audio, dtype=np.float32).reshape(-1)
-    if y.size < 32:
-        return y.copy(), {"used": False, "reason": "too-short"}
     sr = int(sample_rate)
     out_sr = int(output_sample_rate or sample_rate)
+    if y.size < 32:
+        return _final_gender(y.copy(), sr, {"used": False, "reason": "too-short"})
     tf = terminal_frequencies(out_sr)
     nyq = 0.5 * float(sr)
     if nyq <= tf["noise_terminal_start_hz"] + 100.0:
-        return y.copy(), {"used": False, "reason": "insufficient-bandwidth", **tf}
+        return _final_gender(y.copy(), sr, {"used": False, "reason": "insufficient-bandwidth", **tf})
 
     pad = min(max(512, int(round(0.040 * sr))), max(1, y.size - 1))
     yp = np.pad(y.astype(np.float64), (pad, pad), mode="reflect") if y.size > 1 else np.pad(y.astype(np.float64), (pad, pad))
@@ -174,9 +183,9 @@ def apply_output_terminal_guard_numpy(
     gain[freqs >= tf["terminal_zero_hz"]] = 0.0
     out = np.fft.irfft(spec * gain, n=nfft)[:yp.size]
     out = out[pad:pad + y.size].astype(np.float32)
-    return out, {
+    return _final_gender(out, sr, {
         "used": True,
         "terminal_gain_at_20k": float(np.interp(20000.0, freqs, gain)),
         "terminal_gain_at_21k": float(np.interp(21000.0, freqs, gain)),
         **tf,
-    }
+    })
