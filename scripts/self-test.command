@@ -22,16 +22,19 @@ controls=(root/'src/yuaz_ddsp_resampler/ai_vocal_controls.py').read_text()
 require('mask = (strength > 1e-6).to(c.dtype) * voiced' in controls, 'AI control voiced mask')
 require('control_gate_mode": "source-active-voiced"' in controls, 'AI control gate mode')
 require('mask = strength * voiced' not in controls, 'obsolete strength mask still present')
+require('t_progress = t_amount * t_amount * (3.0 - 2.0 * t_amount)' in controls, 'YT learned monotonic progress')
+require('t_dg = t_dg * t_progress * (0.015 + 0.035 * t_progress)' in controls, 'YT learned gate reduction')
 vocal=(root/'src/yuaz_ddsp_resampler/vocal_controls.py').read_text()
 for label, expected in (
-    ('YT carrier', 'tension_scale = carrier("tension", 0.58)'),
+    ('YT carrier', 'tension_scale = carrier("tension", 0.74)'),
     ('YG carrier', 'gender_scale = carrier("gender_formant", 0.85)'),
     ('YO carrier', 'mouth_scale = carrier("mouth", 0.95)'),
     ('YF carrier', 'falsetto_spectral_scale = carrier("falsetto", 0.88, 0.96)'),
     ('YX carrier', 'mixed_scale = carrier("mixed_voice", 0.95, 0.95)'),
     ('YP carrier', 'pharyngeal_scale = carrier("pharyngeal", 0.95, 0.95)'),
-    ('YT AP route', 'out_ap = out_ap - 0.28 * t_pos * tension_ap_shape * out_ap'),
-    ('YT gate route', 'out_gate = out_gate + 0.28 * t_pos_g * (1.0 - out_gate)'),
+    ('YT progressive curve', 'torch.pow(torch.abs(tension), 1.20) * tension_scale'),
+    ('YT AP route', 'out_ap = out_ap - 0.16 * t_pos * tension_ap_shape * out_ap'),
+    ('YT gate route', 'out_gate = out_gate + 0.08 * t_pos_g * (1.0 - out_gate)'),
     ('YX gate route', 'out_gate = out_gate + 0.48 * x_g * (1.0 - out_gate)'),
     ('YO formant warp', 'shift_hz = (430.0 * f1_weight + 105.0 * f2_weight) * control'),
     ('YF F0-relative register', 'harmonic_order = hz / f0_env'),
