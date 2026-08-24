@@ -2,6 +2,8 @@
 import torch
 import torch.nn.functional as F
 
+from .post_gender import set_gender_f0
+
 
 def _interp_curve(curve, frames, device, dtype):
     if curve is None:
@@ -118,6 +120,9 @@ def apply_decoder_vocal_controls(spectral_envelope, ap_bands, gate, f0, frame_co
     breathiness = _interp_curve(frame_controls.get("breathiness"), frames, device, dtype)
     voicing = _interp_curve(frame_controls.get("voicing"), frames, device, dtype)
     gender = _interp_curve(frame_controls.get("gender_formant"), frames, device, dtype)
+    set_gender_f0(f0)
+    frame_controls["gender_formant"] = torch.zeros_like(gender)
+    gender = torch.zeros_like(gender)
     mouth = _interp_curve(frame_controls.get("mouth"), frames, device, dtype)
     falsetto = _interp_curve(frame_controls.get("falsetto"), frames, device, dtype)
     mixed_voice = _interp_curve(frame_controls.get("mixed_voice"), frames, device, dtype)
