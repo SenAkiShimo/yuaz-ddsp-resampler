@@ -22,8 +22,6 @@ log = root / "logs" / "render_requests.jsonl"
 if not log.is_file():
     raise SystemExit("No render_requests.jsonl found. Render one note in OpenUtau first.")
 lines = [line for line in log.read_text(encoding="utf-8", errors="replace").splitlines() if line.strip()]
-if not lines:
-    raise SystemExit("render_requests.jsonl is empty. Render one note in OpenUtau first.")
 base = None
 for line in reversed(lines):
     try:
@@ -47,14 +45,22 @@ port = int(config.get("port", client.DEFAULT_PORT))
 runtime_id = str(config.get("runtime_id") or client.ENGINE_VERSION)
 client.start_server(root, config_path, host, port, runtime_id)
 
-pat = re.compile(r"YT[+-]?(?:\d+(?:\.\d*)?|\.\d+)", re.I)
+num = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)"
 
-def with_yt(flags, value):
+def set_control(flags, key, value):
     flags = str(flags or "")
-    replacement = f"YT{value}"
-    if pat.search(flags):
-        return pat.sub(replacement, flags, count=1)
+    pattern = re.compile(re.escape(key) + num, re.I)
+    replacement = f"{key}{value}"
+    if pattern.search(flags):
+        return pattern.sub(replacement, flags, count=1)
     return flags + replacement
+
+def clean_flags(flags, yt):
+    out = str(flags or "")
+    for key in ("YM", "YD", "YH", "YB", "YV", "YG", "YO", "YF", "YX", "YP"):
+        out = set_control(out, key, 0)
+    out = set_control(out, "YT", yt)
+    return out
 
 def load_audio(path):
     y, sr = sf.read(path, always_2d=False)
@@ -64,50 +70,75 @@ def load_audio(path):
 
 def stats(path):
     y, sr = load_audio(path)
-    if y.size:
-        steps = np.abs(np.diff(y)) if y.size > 1 else np.zeros(1)
-        max_step_index = int(np.argmax(steps)) if steps.size else 0
-        return {
-            "sha256": hashlib.sha256(Path(path).read_bytes()).hexdigest()[:16],
-            "samples": int(y.size),
-            "sr": sr,
-            "max_abs": float(np.max(np.abs(y))),
-            "rms": float(np.sqrt(np.mean(y * y) + 1e-18)),
-            "max_step": float(np.max(steps)) if steps.size else 0.0,
-            "p999_step": float(np.quantile(steps, 0.999)) if steps.size else 0.0,
-            "max_step_index": max_step_index,
-        }
-    return {"sha256": hashlib.sha256(Path(path).read_bytes()).hexdigest()[:16], "samples": 0, "sr": sr}
+    steps = np.abs(np.diff(y)) if y.size > 1 else np.zeros(1)
+    return {
+        "sha256": hashlib.sha256(Path(path).read_bytes()).hexdigest()[:16],
+        "samples": int(y.size),
+        "sr": sr,
+        "max_abs": float(np.max(np.abs(y))) if y.size else 0.0,
+        "rms": float(np.sqrt(np.mean(y * y) + 1e-18)) if y.size else 0.0,
+        "max_step": float(np.max(steps)) if steps.size else 0.0,
+        "p999_step": float(np.quantile(steps, 0.999)) if steps.size else 0.0,
+        "max_step_index": int(np.argmax(steps)) if steps.size else 0,
+    }
 
-with tempfile.TemporaryDirectory(prefix="yuaz-yt01-") as td:
+def effect_summary(response):
+    items = []
+    for effect in response.get("yuaz_ai_effects") or []:
+        items.append({
+            k: effect.get(k) for k in (
+                "pack_controls", "controls", "runtime_route", "runtime_gain",
+                "raw_spectral_rms", "raw_ap_rms", "raw_gate_rms",
+                "applied_spectral_log_rms", "applied_ap_rms", "applied_gate_rms",
+                "collapsed",
+            ) if k in effect
+        })
+    return items
+
+def response_summary(response):
+    return {
+        "diagnostic": response.get("diagnostic"),
+        "yuaz_tension": response.get("yuaz_tension"),
+        "yuaz_tension_backend": response.get("yuaz_tension_backend"),
+        "yuaz_ai_control_packs": response.get("yuaz_ai_control_packs"),
+        "yuaz_ai_direct_controls": response.get("yuaz_ai_direct_controls"),
+        "yuaz_vocal_controls_active": response.get("yuaz_vocal_controls_active"),
+        "yuaz_ai_effects": effect_summary(response),
+        "loudness_gain_db": response.get("loudness_gain_db"),
+        "loudness_peak_guard_samples": response.get("loudness_peak_guard_samples"),
+    }
+
+def diff(a, b):
+    n = min(len(a), len(b))
+    if n <= 0:
+        return {"samples": 0}
+    d = np.asarray(a[:n] - b[:n], dtype=np.float64)
+    ds = np.abs(np.diff(d)) if n > 1 else np.zeros(1)
+    return {
+        "samples": int(n),
+        "max_abs": float(np.max(np.abs(d))),
+        "rms": float(np.sqrt(np.mean(d * d) + 1e-18)),
+        "max_step": float(np.max(ds)) if ds.size else 0.0,
+    }
+
+with tempfile.TemporaryDirectory(prefix="yuaz-yt-sweep-") as td:
     td = Path(td)
-    outputs = {}
     arrays = {}
-    for value in (0, 1):
-        outputs[value] = []
-        arrays[value] = []
-        for repeat in range(2):
-            req = copy.deepcopy(base)
-            req["flags"] = with_yt(req.get("flags", ""), value)
-            out = td / f"yt{value}-{repeat}.wav"
-            req["output"] = str(out)
-            response = client.send(host, port, {"action": "render", "request": req, "runtime_id": runtime_id}, timeout=600)
-            if not response.get("ok"):
-                raise RuntimeError(f"YT{value} render failed: {response.get('error')}")
-            outputs[value].append({"response": {k: response.get(k) for k in ("ok", "diagnostic", "yuaz_tension")}, "stats": stats(out)})
-            arrays[value].append(load_audio(out)[0])
-
-    def diff(a, b):
-        n = min(len(a), len(b))
-        if n <= 0:
-            return {"samples": 0}
-        d = np.asarray(a[:n] - b[:n], dtype=np.float64)
-        ds = np.abs(np.diff(d)) if n > 1 else np.zeros(1)
-        return {
-            "samples": int(n),
-            "max_abs": float(np.max(np.abs(d))),
-            "rms": float(np.sqrt(np.mean(d * d) + 1e-18)),
-            "max_step": float(np.max(ds)) if ds.size else 0.0,
+    results = {}
+    for value in (0, 1, 10, 50, 100):
+        req = copy.deepcopy(base)
+        req.pop("control_curves", None)
+        req["flags"] = clean_flags(req.get("flags", ""), value)
+        out = td / f"yt{value}.wav"
+        req["output"] = str(out)
+        response = client.send(host, port, {"action": "render", "request": req, "runtime_id": runtime_id}, timeout=600)
+        if not response.get("ok"):
+            raise RuntimeError(f"YT{value} render failed: {response.get('error')}")
+        arrays[value] = load_audio(out)[0]
+        results[value] = {
+            "flags": req.get("flags"),
+            "stats": stats(out),
+            "response": response_summary(response),
         }
 
     result = {
@@ -116,12 +147,12 @@ with tempfile.TemporaryDirectory(prefix="yuaz-yt01-") as td:
             "tone": base.get("tone"),
             "length": base.get("length"),
             "flags": base.get("flags"),
+            "had_control_curves": bool(base.get("control_curves")),
         },
-        "yt0": outputs[0],
-        "yt1": outputs[1],
-        "repeat_diff_yt0": diff(arrays[0][0], arrays[0][1]),
-        "repeat_diff_yt1": diff(arrays[1][0], arrays[1][1]),
-        "yt0_vs_yt1": diff(arrays[0][0], arrays[1][0]),
+        "sweep": {str(k): v for k, v in results.items()},
+        "diff_from_yt0": {
+            str(k): diff(arrays[0], arrays[k]) for k in (1, 10, 50, 100)
+        },
     }
     print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
 PY
