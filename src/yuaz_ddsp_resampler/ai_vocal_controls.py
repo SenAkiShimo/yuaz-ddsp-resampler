@@ -149,7 +149,7 @@ class AIControlAdapter(nn.Module):
         t_dg = t_dg * t_progress * (0.015 + 0.035 * t_progress)
 
         if float(torch.max(torch.abs(v)).detach().cpu()) <= 1e-6:
-            return t_ds, t_da, t_dg
+            return torch.zeros_like(t_ds), torch.zeros_like(t_da), torch.zeros_like(t_dg)
 
         magnitude = torch.abs(v)
         pos_controls = dict(controls)
