@@ -207,7 +207,7 @@ def apply_decoder_vocal_controls(spectral_envelope, ap_bands, gate, f0, frame_co
 
     ap_frames = ap_bands.shape[-1]
     b_ap = _interp_curve(breathiness, ap_frames, ap_bands.device, ap_bands.dtype)
-    t_ap = _interp_curve(tension_eff, ap_frames, ap_bands.device, ap_bands.dtype)
+    t_ap = torch.zeros_like(_interp_curve(tension_eff, ap_frames, ap_bands.device, ap_bands.dtype))
     v_ap = _interp_curve(voicing, ap_frames, ap_bands.device, ap_bands.dtype)
     voiced_ap = (f0 > 1.0).to(ap_bands.dtype)
     if voiced_ap.shape[-1] != ap_frames:
@@ -250,7 +250,7 @@ def apply_decoder_vocal_controls(spectral_envelope, ap_bands, gate, f0, frame_co
     gate_frames = gate.shape[-1]
     b_g = _interp_curve(breathiness, gate_frames, gate.device, gate.dtype)
     v_g = _interp_curve(voicing, gate_frames, gate.device, gate.dtype)
-    t_g = _interp_curve(tension_eff, gate_frames, gate.device, gate.dtype)
+    t_g = torch.zeros_like(_interp_curve(tension_eff, gate_frames, gate.device, gate.dtype))
     voiced_g = (f0 > 1.0).to(gate.dtype)
     if voiced_g.shape[-1] != gate_frames:
         voiced_g = F.interpolate(voiced_g, size=gate_frames, mode="nearest")
