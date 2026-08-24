@@ -103,7 +103,6 @@ class YuazControls:
 
         def shape_curve(name, value):
             amount = {
-                "tension": 0.24,
                 "gender_formant": 0.08,
                 "mouth": 0.22,
             }.get(name, 0.0)
