@@ -142,12 +142,11 @@ class AIControlAdapter(nn.Module):
             spectral_envelope, ap_bands, gate, f0, tension_controls
         )
 
-        t_pos = torch.clamp(t, 0.0, 1.0)
-        t_neg = torch.clamp(-t, 0.0, 1.0)
-        t_amount = torch.clamp(t_pos + t_neg, 0.0, 1.0)
-        t_ds = t_ds * (1.0 - t_amount + 0.34 * t_pos + 0.46 * t_neg)
-        t_da = t_da * (1.0 - t_amount + 0.52 * t_pos + 0.58 * t_neg)
-        t_dg = t_dg * (1.0 - t_amount + 0.52 * t_pos + 0.58 * t_neg)
+        t_amount = torch.clamp(torch.abs(t), 0.0, 1.0)
+        t_progress = t_amount * t_amount * (3.0 - 2.0 * t_amount)
+        t_ds = t_ds * t_progress * (0.10 + 0.20 * t_progress)
+        t_da = t_da * t_progress * (0.08 + 0.16 * t_progress)
+        t_dg = t_dg * t_progress * (0.015 + 0.035 * t_progress)
 
         if float(torch.max(torch.abs(v)).detach().cpu()) <= 1e-6:
             return t_ds, t_da, t_dg
@@ -235,6 +234,11 @@ class AIControlAdapter(nn.Module):
             if raw_effect > 1e-6 and raw_effect < float(getattr(self, "runtime_effect_floor", 0.055)):
                 base_gain *= min(2.5, float(getattr(self, "runtime_effect_floor", 0.055)) / raw_effect)
             gain = min(float(getattr(self, "runtime_gain_cap", 4.0)), base_gain)
+            if tuple(self.control_names) == ("tension", "voicing"):
+                tension_curve = _curve(controls.get("tension"), spectral_envelope.shape[-1], spectral_envelope.device, spectral_envelope.dtype)
+                voicing_curve = _curve(controls.get("voicing"), spectral_envelope.shape[-1], spectral_envelope.device, spectral_envelope.dtype)
+                if float(torch.max(torch.abs(tension_curve)).detach().cpu()) > 1e-6 and float(torch.max(torch.abs(voicing_curve)).detach().cpu()) <= 1e-6:
+                    gain = min(gain, 2.0)
         ds_full = _resize_freq(ds * gain, spectral_envelope.shape[1])
         da_full = _resize_freq(da * gain, ap_bands.shape[1])
         da_full = _resize_time(da_full, ap_bands.shape[-1])
