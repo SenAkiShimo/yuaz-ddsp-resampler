@@ -8,6 +8,8 @@ if [ -z "$WAV" ]; then
   read -r WAV
 fi
 [ -f "$WAV" ] || exit 1
+pkill -f yuaz_ddsp_resampler.server 2>/dev/null || true
+sleep 1
 export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 "$PY" - "$ROOT" "$WAV" <<'PY'
 import json
@@ -26,14 +28,8 @@ host = config.get("host", "127.0.0.1")
 port = int(config.get("port", client.DEFAULT_PORT))
 runtime_id = str(config.get("runtime_id") or client.ENGINE_VERSION)
 
-status = client.ping(host, port)
-ready = bool(
-    status and status.get("ready")
-    and status.get("engine_version") == client.ENGINE_VERSION
-    and status.get("runtime_id") == runtime_id
-)
-if not ready:
-    client.start_server(root, config_path, host, port, runtime_id)
+client.start_server(root, config_path, host, port, runtime_id)
+status = client.ping(host, port) or {}
 
 base_request = {
     "input": str(wav),
@@ -100,6 +96,7 @@ for thread in threads:
 
 status = client.ping(host, port) or {}
 print(json.dumps({
+    "server_pid": status.get("pid"),
     "concurrent": results,
     "server_ready": status.get("ready"),
     "server_error": status.get("error"),
