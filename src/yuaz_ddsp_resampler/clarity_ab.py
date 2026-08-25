@@ -50,41 +50,69 @@ def _local_source_f0(source_f0, source_samples, start_sample, end_sample):
     return float(np.median(voiced)) if voiced.size else 0.0
 
 
+def _highpass(x, sr, cutoff_hz=1450.0):
+    x = np.asarray(x, dtype=np.float32).reshape(-1)
+    if x.size < 8:
+        return np.zeros_like(x)
+    width = int(round(0.443 * float(sr) / max(100.0, float(cutoff_hz))))
+    width = max(5, width)
+    if width % 2 == 0:
+        width += 1
+    kernel = np.ones(width, dtype=np.float32) / float(width)
+    low = np.convolve(x, kernel, mode="same").astype(np.float32)
+    return (x - low).astype(np.float32)
+
+
 def _aperiodic_transient(source, sr, f0_hz):
     x = np.asarray(source, dtype=np.float32).reshape(-1)
     if x.size < 8:
         return np.zeros_like(x)
-    residual = x.copy()
-    if f0_hz > 35.0:
-        delay = int(np.clip(round(float(sr) / float(f0_hz)), 2, max(2, x.size // 3)))
-        if delay < x.size:
-            residual[delay:] = x[delay:] - x[:-delay]
-            residual[:delay] = 0.0
-    width = max(3, int(round(0.00085 * float(sr))))
-    if width % 2 == 0:
-        width += 1
-    kernel = np.ones(width, dtype=np.float32) / float(width)
-    smooth = np.convolve(residual, kernel, mode="same").astype(np.float32)
-    residual = residual - smooth
-    return residual.astype(np.float32)
+    hp = _highpass(x, sr, 1450.0)
+    if f0_hz <= 35.0:
+        return hp
+    period = int(np.clip(round(float(sr) / float(f0_hz)), 2, max(2, x.size // 3)))
+    candidates = []
+    for delta in (-1, 0, 1):
+        delay = int(np.clip(period + delta, 2, max(2, x.size // 3)))
+        residual = np.zeros_like(hp)
+        if delay < hp.size:
+            residual[delay:] = hp[delay:] - hp[:-delay]
+        candidates.append(residual)
+    stack = np.stack(candidates, axis=0)
+    residual = np.median(stack, axis=0).astype(np.float32)
+    derivative = np.zeros_like(hp)
+    derivative[1:] = hp[1:] - hp[:-1]
+    return (0.82 * residual + 0.18 * derivative).astype(np.float32)
 
 
-def _inject_transient_detail(baseline, original, sr, source_f0, stats):
+def _inject_transient_detail(baseline, original, sr, source_f0, stats, strength=1.0):
     out = np.asarray(baseline, dtype=np.float32).copy()
     source = np.asarray(original, dtype=np.float32).reshape(-1)
-    if out.size < 16 or source.size < 16:
+    if out.size < 32 or source.size < 32:
         return out, {"used": False}
 
-    source_onset_ms = float(stats.get("source_onset_ms", 0.0))
+    source_raw_ms = float(stats.get("source_raw_end_ms", 0.0))
+    source_onset_ms = float(stats.get("source_onset_ms", source_raw_ms + 5.0))
     source_end_ms = float(stats.get("source_articulation_end_ms", source_onset_ms + 120.0))
-    target_onset_ms = float(stats.get("target_onset_ms", 0.0))
+    target_raw_ms = float(stats.get("target_raw_end_ms", 0.0))
+    target_onset_ms = float(stats.get("target_onset_ms", target_raw_ms + 5.0))
     target_end_ms = float(stats.get("target_articulation_end_ms", target_onset_ms + 120.0))
 
-    s0 = int(np.clip(round(source_onset_ms * sr / 1000.0), 0, source.size))
-    s1 = int(np.clip(round(source_end_ms * sr / 1000.0), s0, source.size))
-    t0 = int(np.clip(round(target_onset_ms * sr / 1000.0), 0, out.size))
-    t1 = int(np.clip(round(target_end_ms * sr / 1000.0), t0, out.size))
-    if s1 - s0 < 16 or t1 - t0 < 16:
+    source_end_ms = max(source_end_ms, source_onset_ms + 70.0)
+    target_end_ms = max(target_end_ms, target_onset_ms + 70.0)
+    source_start_ms = max(0.0, min(source_raw_ms, source_onset_ms - 4.0))
+    target_start_ms = max(0.0, min(target_raw_ms, target_onset_ms - 4.0))
+
+    s0 = int(np.clip(round(source_start_ms * sr / 1000.0), 0, source.size - 1))
+    s1 = int(np.clip(round(source_end_ms * sr / 1000.0), s0 + 1, source.size))
+    t0 = int(np.clip(round(target_start_ms * sr / 1000.0), 0, out.size - 1))
+    t1 = int(np.clip(round(target_end_ms * sr / 1000.0), t0 + 1, out.size))
+
+    if s1 - s0 < 32:
+        s1 = min(source.size, s0 + max(32, int(round(0.090 * sr))))
+    if t1 - t0 < 32:
+        t1 = min(out.size, t0 + max(32, int(round(0.090 * sr))))
+    if s1 - s0 < 32 or t1 - t0 < 32:
         return out, {"used": False}
 
     local_f0 = _local_source_f0(source_f0, source.size, s0, s1)
@@ -92,15 +120,15 @@ def _inject_transient_detail(baseline, original, sr, source_f0, stats):
     detail = _resample(detail, t1 - t0)
 
     n = detail.size
-    attack = min(n, max(1, int(round(0.010 * sr))))
-    hold = min(n, max(attack, int(round(0.032 * sr))))
+    attack = min(n, max(1, int(round(0.004 * sr))))
+    onset = int(np.clip(round((target_onset_ms - target_start_ms) * sr / 1000.0), 0, n))
+    decay_start = min(n, onset + max(1, int(round(0.055 * sr))))
     envelope = np.ones(n, dtype=np.float32)
     if attack > 1:
-        u = np.linspace(0.0, 1.0, attack, dtype=np.float32)
-        envelope[:attack] = u * u * (3.0 - 2.0 * u)
-    if n > hold:
-        u = np.linspace(0.0, 1.0, n - hold, dtype=np.float32)
-        envelope[hold:] = 0.5 + 0.5 * np.cos(np.pi * u)
+        envelope[:attack] = np.linspace(0.0, 1.0, attack, dtype=np.float32)
+    if n > decay_start:
+        u = np.linspace(0.0, 1.0, n - decay_start, dtype=np.float32)
+        envelope[decay_start:] = 0.5 + 0.5 * np.cos(np.pi * u)
     detail *= envelope
 
     base = out[t0:t1]
@@ -109,15 +137,23 @@ def _inject_transient_detail(baseline, original, sr, source_f0, stats):
     if detail_rms <= 1e-8:
         return out, {"used": False}
 
-    target_rms = max(0.004, min(0.32 * max(base_rms, 0.012), 0.055))
-    gain = float(np.clip(target_rms / detail_rms, 0.0, 1.15))
+    amount = float(np.clip(strength, 0.0, 2.0))
+    target_rms = max(0.010, min((0.24 + 0.10 * amount) * max(base_rms, 0.020), 0.060))
+    gain = float(np.clip(target_rms / detail_rms, 0.0, 2.5)) * amount
     detail *= gain
+    peak_cap = max(0.035, min(0.22, 0.72 * max(float(np.max(np.abs(base))), 0.05)))
+    detail = np.clip(detail, -peak_cap, peak_cap)
     out[t0:t1] = np.clip(base.astype(np.float64) + detail.astype(np.float64), -1.2, 1.2).astype(np.float32)
+
+    applied_rms = float(np.sqrt(np.mean(detail.astype(np.float64) ** 2) + 1e-12))
     return out, {
         "used": True,
         "source_f0_hz": float(local_f0),
         "detail_rms": float(detail_rms),
+        "applied_rms": float(applied_rms),
         "gain": float(gain),
+        "source_start_ms": float(source_start_ms),
+        "target_start_ms": float(target_start_ms),
         "target_onset_ms": float(target_onset_ms),
         "target_end_ms": float(target_end_ms),
     }
@@ -142,24 +178,16 @@ def _install():
         if mode < 25.0:
             return baseline, stats
 
-        if 25.0 <= mode < 75.0:
-            out = np.asarray(baseline, dtype=np.float32).copy()
-            start = int(np.clip(round(float(stats.get("target_onset_ms", 0.0)) * sr / 1000.0), 0, out.size))
-            end = int(np.clip(start + round(0.045 * sr), start, out.size))
-            out[start:end] = 0.0
-            result = dict(stats)
-            result["clarity_ab_mode"] = float(mode)
-            result["clarity_ab_sanity_cut"] = True
-            return out, result
-
+        strength = 0.78 if mode < 75.0 else 1.0
         mixed, detail_stats = _inject_transient_detail(
-            baseline, original, sr, source_f0, stats
+            baseline, original, sr, source_f0, stats, strength=strength
         )
         result = dict(stats)
         result["clarity_ab_mode"] = float(mode)
         result["clarity_ab_transient_used"] = bool(detail_stats.get("used", False))
         result["clarity_ab_source_f0_hz"] = float(detail_stats.get("source_f0_hz", 0.0))
         result["clarity_ab_transient_gain"] = float(detail_stats.get("gain", 0.0))
+        result["clarity_ab_applied_rms"] = float(detail_stats.get("applied_rms", 0.0))
         return mixed.astype(np.float32), result
 
     def blend_v3_wrapper(legacy_output, fullband_output, sr, start_hz=8200.0, full_hz=13800.0):
