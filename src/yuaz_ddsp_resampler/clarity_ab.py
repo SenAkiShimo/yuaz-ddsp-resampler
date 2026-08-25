@@ -21,6 +21,108 @@ def get_mode():
     return float(getattr(_state, "mode", 0.0))
 
 
+def _resample(x, n):
+    x = np.asarray(x, dtype=np.float32).reshape(-1)
+    n = int(max(0, n))
+    if n == 0:
+        return np.zeros(0, dtype=np.float32)
+    if x.size == 0:
+        return np.zeros(n, dtype=np.float32)
+    if x.size == n:
+        return x.copy()
+    if x.size == 1:
+        return np.full(n, float(x[0]), dtype=np.float32)
+    src = np.linspace(0.0, 1.0, x.size, dtype=np.float64)
+    dst = np.linspace(0.0, 1.0, n, dtype=np.float64)
+    return np.interp(dst, src, x.astype(np.float64)).astype(np.float32)
+
+
+def _local_source_f0(source_f0, source_samples, start_sample, end_sample):
+    f0 = np.asarray(source_f0, dtype=np.float32).reshape(-1)
+    if f0.size == 0 or source_samples <= 0:
+        return 0.0
+    a = int(np.clip(round(float(start_sample) / float(source_samples) * f0.size), 0, f0.size - 1))
+    b = int(np.clip(round(float(end_sample) / float(source_samples) * f0.size), a + 1, f0.size))
+    voiced = f0[a:b]
+    voiced = voiced[voiced > 1.0]
+    if voiced.size == 0:
+        voiced = f0[f0 > 1.0]
+    return float(np.median(voiced)) if voiced.size else 0.0
+
+
+def _aperiodic_transient(source, sr, f0_hz):
+    x = np.asarray(source, dtype=np.float32).reshape(-1)
+    if x.size < 8:
+        return np.zeros_like(x)
+    residual = x.copy()
+    if f0_hz > 35.0:
+        delay = int(np.clip(round(float(sr) / float(f0_hz)), 2, max(2, x.size // 3)))
+        if delay < x.size:
+            residual[delay:] = x[delay:] - x[:-delay]
+            residual[:delay] = 0.0
+    width = max(3, int(round(0.00085 * float(sr))))
+    if width % 2 == 0:
+        width += 1
+    kernel = np.ones(width, dtype=np.float32) / float(width)
+    smooth = np.convolve(residual, kernel, mode="same").astype(np.float32)
+    residual = residual - smooth
+    return residual.astype(np.float32)
+
+
+def _inject_transient_detail(baseline, original, sr, source_f0, stats):
+    out = np.asarray(baseline, dtype=np.float32).copy()
+    source = np.asarray(original, dtype=np.float32).reshape(-1)
+    if out.size < 16 or source.size < 16:
+        return out, {"used": False}
+
+    source_onset_ms = float(stats.get("source_onset_ms", 0.0))
+    source_end_ms = float(stats.get("source_articulation_end_ms", source_onset_ms + 120.0))
+    target_onset_ms = float(stats.get("target_onset_ms", 0.0))
+    target_end_ms = float(stats.get("target_articulation_end_ms", target_onset_ms + 120.0))
+
+    s0 = int(np.clip(round(source_onset_ms * sr / 1000.0), 0, source.size))
+    s1 = int(np.clip(round(source_end_ms * sr / 1000.0), s0, source.size))
+    t0 = int(np.clip(round(target_onset_ms * sr / 1000.0), 0, out.size))
+    t1 = int(np.clip(round(target_end_ms * sr / 1000.0), t0, out.size))
+    if s1 - s0 < 16 or t1 - t0 < 16:
+        return out, {"used": False}
+
+    local_f0 = _local_source_f0(source_f0, source.size, s0, s1)
+    detail = _aperiodic_transient(source[s0:s1], sr, local_f0)
+    detail = _resample(detail, t1 - t0)
+
+    n = detail.size
+    attack = min(n, max(1, int(round(0.010 * sr))))
+    hold = min(n, max(attack, int(round(0.032 * sr))))
+    envelope = np.ones(n, dtype=np.float32)
+    if attack > 1:
+        u = np.linspace(0.0, 1.0, attack, dtype=np.float32)
+        envelope[:attack] = u * u * (3.0 - 2.0 * u)
+    if n > hold:
+        u = np.linspace(0.0, 1.0, n - hold, dtype=np.float32)
+        envelope[hold:] = 0.5 + 0.5 * np.cos(np.pi * u)
+    detail *= envelope
+
+    base = out[t0:t1]
+    base_rms = float(np.sqrt(np.mean(base.astype(np.float64) ** 2) + 1e-12))
+    detail_rms = float(np.sqrt(np.mean(detail.astype(np.float64) ** 2) + 1e-12))
+    if detail_rms <= 1e-8:
+        return out, {"used": False}
+
+    target_rms = max(0.004, min(0.32 * max(base_rms, 0.012), 0.055))
+    gain = float(np.clip(target_rms / detail_rms, 0.0, 1.15))
+    detail *= gain
+    out[t0:t1] = np.clip(base.astype(np.float64) + detail.astype(np.float64), -1.2, 1.2).astype(np.float32)
+    return out, {
+        "used": True,
+        "source_f0_hz": float(local_f0),
+        "detail_rms": float(detail_rms),
+        "gain": float(gain),
+        "target_onset_ms": float(target_onset_ms),
+        "target_end_ms": float(target_end_ms),
+    }
+
+
 def _install():
     global _installed, _original_articulation, _original_blend_v3
     if _installed:
@@ -32,41 +134,23 @@ def _install():
 
     def articulation_wrapper(original, generated, sr, source_f0, target_f0, regions, source_fixed_ms, target_fixed_ms, target_ms, canonical_template=None):
         mode = get_mode()
-        if mode < 25.0:
-            return _original_articulation(
-                original, generated, sr, source_f0, target_f0, regions,
-                source_fixed_ms, target_fixed_ms, target_ms,
-                canonical_template=canonical_template,
-            )
-
-        baseline, baseline_stats = _original_articulation(
+        baseline, stats = _original_articulation(
             original, generated, sr, source_f0, target_f0, regions,
             source_fixed_ms, target_fixed_ms, target_ms,
             canonical_template=canonical_template,
         )
-        transition_ms = max(
-            35.0,
-            float(baseline_stats.get("target_articulation_end_ms", target_fixed_ms + 70.0)) - float(target_fixed_ms),
+        if mode < 25.0:
+            return baseline, stats
+
+        mixed, detail_stats = _inject_transient_detail(
+            baseline, original, sr, source_f0, stats
         )
-        voiced = np.asarray(target_f0, dtype=np.float32)
-        voiced = voiced[voiced > 1.0]
-        target_f0_hz = float(np.median(voiced)) if voiced.size else 0.0
-        mixed, phase_shift_ms, gain = core.hybrid_mix(
-            original,
-            generated,
-            sr,
-            float(target_fixed_ms),
-            float(transition_ms),
-            target_f0_hz=target_f0_hz,
-        )
-        stats = dict(baseline_stats)
-        stats["phase_shift_ms"] = float(phase_shift_ms)
-        stats["hybrid_gain"] = float(gain)
-        stats["trajectory_transfer_used"] = False
-        stats["trajectory_source"] = "clarity-ab-source-heavy"
-        stats["clarity_ab_mode"] = float(mode)
-        stats["clarity_ab_source_heavy"] = True
-        return mixed.astype(np.float32), stats
+        result = dict(stats)
+        result["clarity_ab_mode"] = float(mode)
+        result["clarity_ab_transient_used"] = bool(detail_stats.get("used", False))
+        result["clarity_ab_source_f0_hz"] = float(detail_stats.get("source_f0_hz", 0.0))
+        result["clarity_ab_transient_gain"] = float(detail_stats.get("gain", 0.0))
+        return mixed.astype(np.float32), result
 
     def blend_v3_wrapper(legacy_output, fullband_output, sr, start_hz=8200.0, full_hz=13800.0):
         mode = get_mode()
