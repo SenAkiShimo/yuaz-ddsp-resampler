@@ -57,7 +57,7 @@ class YuazControls:
 
     @property
     def raw_bypass_enabled(self):
-        return float(self.raw_bypass) >= 0.5 or float(self.clarity_ab) >= 99.0
+        return float(self.raw_bypass) >= 0.5
 
     @property
     def vocal_controls_active(self):
