@@ -142,6 +142,16 @@ def _install():
         if mode < 25.0:
             return baseline, stats
 
+        if 25.0 <= mode < 75.0:
+            out = np.asarray(baseline, dtype=np.float32).copy()
+            start = int(np.clip(round(float(stats.get("target_onset_ms", 0.0)) * sr / 1000.0), 0, out.size))
+            end = int(np.clip(start + round(0.045 * sr), start, out.size))
+            out[start:end] = 0.0
+            result = dict(stats)
+            result["clarity_ab_mode"] = float(mode)
+            result["clarity_ab_sanity_cut"] = True
+            return out, result
+
         mixed, detail_stats = _inject_transient_detail(
             baseline, original, sr, source_f0, stats
         )
