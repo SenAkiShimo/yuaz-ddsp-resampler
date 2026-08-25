@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 
 _CONTROL_RE = re.compile(
-    r"(YM|YD|YH|YT|YB|YV|YG|YO|YF|YX|YP|YR)([+-]?(?:\d+(?:\.\d*)?|\.\d+))",
+    r"(YM|YD|YH|YT|YB|YV|YG|YO|YF|YX|YP|YR|YC)([+-]?(?:\d+(?:\.\d*)?|\.\d+))",
     re.IGNORECASE,
 )
 
@@ -27,6 +27,7 @@ class YuazControls:
     mixed_voice: float = 0.0
     pharyngeal: float = 0.0
     raw_bypass: float = 0.0
+    clarity_ab: float = 0.0
 
     @property
     def timbre_shift_semitones(self):
@@ -49,9 +50,6 @@ class YuazControls:
 
     @property
     def highband_yuaz_only_hz(self):
-        # v0.2.8ai.14: YH is an amount control, not a hidden crossover selector.
-        # Stronger restoration starts slightly lower so the synthesized >12 kHz
-        # extension can crossfade against the 24 kHz DDSP body's 8–12 kHz edge.
         if not self.highband_enabled:
             return 12000.0
         strength = self.highband_strength
@@ -130,6 +128,7 @@ def parse_yuaz_controls(flags):
         "YM": 0.0, "YD": 0.0, "YH": 0.0,
         "YT": 0.0, "YB": 0.0, "YV": 0.0, "YG": 0.0,
         "YO": 0.0, "YF": 0.0, "YX": 0.0, "YP": 0.0, "YR": 0.0,
+        "YC": 0.0,
     }
     for match in _CONTROL_RE.finditer(str(flags or "")):
         key = match.group(1).upper()
@@ -138,12 +137,18 @@ def parse_yuaz_controls(flags):
             values[key] = max(0.0, min(100.0, raw))
         elif key == "YR":
             values[key] = 1.0 if raw >= 0.5 else 0.0
+        elif key == "YC":
+            values[key] = max(0.0, min(100.0, raw))
         else:
             values[key] = _clamp(raw)
+
+    from .clarity_ab import set_mode
+    set_mode(values["YC"])
+
     return YuazControls(
         timbre_morph=values["YM"], learned_detail=values["YD"], highband_crossover=values["YH"],
         tension=values["YT"], breathiness=values["YB"], voicing=values["YV"],
         gender_formant=values["YG"], mouth=values["YO"],
         falsetto=values["YF"], mixed_voice=values["YX"], pharyngeal=values["YP"],
-        raw_bypass=values["YR"],
+        raw_bypass=values["YR"], clarity_ab=values["YC"],
     )
