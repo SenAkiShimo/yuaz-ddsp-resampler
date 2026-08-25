@@ -110,3 +110,13 @@ expressions:
     default_value: 0
     is_flag: true
     flag: YR
+
+  yct:
+    name: Yuaz Clarity A/B
+    abbr: yct
+    type: Numerical
+    min: 0
+    max: 100
+    default_value: 0
+    is_flag: true
+    flag: YC
