@@ -59,7 +59,7 @@ def prepare_pair(engine, wav):
     detail_t = torch.from_numpy(detail_np).float().unsqueeze(0).to(engine.device)
     with torch.inference_mode():
         z, f0_aligned = engine.encoder(audio_t, f0_override=f0_t)
-    adapter, _, ai_controls, record = engine._models_for_input(wav)
+    adapter, _, _, record = engine._models_for_input(wav)
     prototype_index = record.get("subbank_index") if record else None
     seed = stable_seed(str(wav), "clarity-refiner-train")
     reconstructed = deterministic_decode(
@@ -76,7 +76,12 @@ def prepare_pair(engine, wav):
         return None
     target = torch.from_numpy(exact_length_np(audio, n)).float().view(1, 1, -1).to(engine.device)
     source = torch.from_numpy(exact_length_np(reconstructed, n)).float().view(1, 1, -1).to(engine.device)
-    f0_use = F.interpolate(f0_aligned, size=max(1, int(round(n / engine.hop))), mode="linear", align_corners=False)
+    f0_use = F.interpolate(
+        f0_aligned,
+        size=max(1, int(round(n / engine.hop))),
+        mode="linear",
+        align_corners=False,
+    )
     voiced = np.flatnonzero(f0_np > 1.0)
     first_voiced_sample = int(round(int(voiced[0]) * engine.hop)) if voiced.size else 0
     articulation_end = min(n, first_voiced_sample + int(round(0.23 * engine.sr)))
@@ -108,9 +113,23 @@ def split_chunks(pair, sample_rate, chunk_ms=420):
         q["source"] = pair["source"][..., start:end]
         q["target"] = pair["target"][..., start:end]
         q["first_voiced_sample"] = max(0, fv - start)
-        q["articulation_end_sample"] = max(1, min(chunk, int(pair["articulation_end_sample"]) - start))
+        q["articulation_end_sample"] = max(
+            1,
+            min(chunk, int(pair["articulation_end_sample"]) - start),
+        )
         chunks.append(q)
     return chunks
+
+
+def clarity_loss(pair, pred, sr):
+    return clarity_reconstruction_loss(
+        pair["target"].squeeze(1),
+        pred.squeeze(1),
+        sr,
+        pair["first_voiced_sample"],
+        pair_mode=False,
+        articulation_end_sample=pair["articulation_end_sample"],
+    )
 
 
 def validate(model, pairs, sr):
@@ -121,12 +140,7 @@ def validate(model, pairs, sr):
     with torch.inference_mode():
         for pair in pairs:
             pred, _, _ = model(pair["source"], pair["detail"], pair["f0"])
-            loss, _ = clarity_reconstruction_loss(
-                pair["target"], pred, sr,
-                pair["first_voiced_sample"],
-                pair_mode=False,
-                articulation_end_sample=pair["articulation_end_sample"],
-            )
+            loss, _ = clarity_loss(pair, pred, sr)
             losses.append(float(loss))
     return float(np.mean(losses)) if losses else None
 
@@ -201,12 +215,7 @@ def main():
         for pair in train_pairs:
             optimizer.zero_grad(set_to_none=True)
             pred, residual, gate = model(pair["source"], pair["detail"], pair["f0"])
-            loss, parts = clarity_reconstruction_loss(
-                pair["target"], pred, engine.sr,
-                pair["first_voiced_sample"],
-                pair_mode=False,
-                articulation_end_sample=pair["articulation_end_sample"],
-            )
+            loss, _ = clarity_loss(pair, pred, engine.sr)
             residual_penalty = torch.mean(torch.abs(residual))
             stable_penalty = torch.mean(torch.abs(residual) * (1.0 - gate))
             total = loss + 0.08 * residual_penalty + 0.30 * stable_penalty
