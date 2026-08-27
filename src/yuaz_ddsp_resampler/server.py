@@ -52,7 +52,10 @@ _state.resolve_active_state = _resolve_active_state_readonly_ai14
 _state.lookup_local_record = _lookup_local_record_runtime_compatible
 
 from .core import YuazDDSPResamplerEngine
+from . import clarity_ab
 from .state import atomic_write_json
+
+clarity_ab.set_mode(0.0)
 
 ENGINE_VERSION = "0.2.9"
 
