@@ -51,8 +51,10 @@ def _state_error_allows_base_fallback(exc):
 _state.resolve_active_state = _resolve_active_state_readonly_ai14
 _state.lookup_local_record = _lookup_local_record_runtime_compatible
 
+from . import core as _core
 from .core import YuazDDSPResamplerEngine
 from . import clarity_ab
+from .controls import parse_yuaz_controls
 from .state import atomic_write_json
 
 clarity_ab.set_mode(0.0)
@@ -91,8 +93,22 @@ class Handler(socketserver.StreamRequestHandler):
                 with State.active_lock:
                     State.active_renders += 1
                 try:
-                    response = State.engine.render(request["request"])
-                    self._log_request(request["request"], response)
+                    render_request = request["request"]
+                    controls = parse_yuaz_controls(render_request.get("flags", ""))
+                    if float(controls.clarity_ab) >= 99.0:
+                        try:
+                            probe_sr = int(getattr(State.engine, "sr", 24000))
+                            probe_audio = _core.read_audio(render_request["input"], probe_sr)
+                            _core.crop_oto(
+                                probe_audio,
+                                probe_sr,
+                                float(render_request.get("offset", 0.0)),
+                                float(render_request.get("cutoff", 0.0)),
+                            )
+                        except Exception:
+                            pass
+                    response = State.engine.render(render_request)
+                    self._log_request(render_request, response)
                 finally:
                     with State.active_lock:
                         State.active_renders = max(0, State.active_renders - 1)
