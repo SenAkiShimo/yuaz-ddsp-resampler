@@ -6,6 +6,8 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
+from . import native_detail_probe
+
 
 _state = threading.local()
 _installed = False
@@ -13,6 +15,8 @@ _original_decode_dualrate = None
 _original_articulation = None
 _original_blends = {}
 _original_write_wav = None
+_original_read_audio = None
+_original_crop_oto = None
 
 
 def set_mode(value):
@@ -46,14 +50,18 @@ def _reset_dump():
     (path / "00_README.txt").write_text(
         "Yuaz clarity stage dump\n"
         "\n"
-        "01_ddsp_raw.wav            24 kHz DDSP compatibility body before Fidelity\n"
-        "02_after_fidelity.wav      24 kHz body after Fidelity refiner\n"
-        "03_after_articulation.wav  24 kHz body after source-constrained articulation hybrid\n"
-        "04_24k_legacy.wav          articulation result resampled to output rate\n"
-        "05_fullband.wav            independent fullband DDSP body at output rate\n"
-        "06_after_fullband_mix.wav  result immediately after legacy/fullband crossover\n"
-        "07_final.wav               final signal after highband/topband/loudness processing, before UTAU volume scaling\n"
-        "08_comparison.txt          objective numeric comparison between stages\n"
+        "00_source_native.wav        cropped source OTO at original sample rate\n"
+        "00_source_24k.wav           same source OTO after Yuaz input resampling\n"
+        "01_ddsp_raw.wav             24 kHz DDSP compatibility body before Fidelity\n"
+        "02_after_fidelity.wav       24 kHz body after Fidelity refiner\n"
+        "03_after_articulation.wav   24 kHz body after source-constrained articulation hybrid\n"
+        "04_24k_legacy.wav           articulation result resampled to output rate\n"
+        "05_fullband.wav             independent fullband DDSP body at output rate\n"
+        "06_after_fullband_mix.wav   result immediately after legacy/fullband crossover\n"
+        "07_final.wav                final signal after highband/topband/loudness processing, before UTAU volume scaling\n"
+        "08_comparison.txt           objective numeric comparison between synthesis stages\n"
+        "09_detail_report.txt        native-source vs synthesis band/detail comparison\n"
+        "bands/                      band-limited source/final listening files\n"
         "\n"
         "YC100 enables dump only. It does not alter synthesis.\n",
         encoding="utf-8",
@@ -201,6 +209,7 @@ def _write_comparison_report():
 
 def _install():
     global _installed, _original_decode_dualrate, _original_articulation, _original_write_wav
+    global _original_read_audio, _original_crop_oto
     if _installed:
         return
 
@@ -209,11 +218,27 @@ def _install():
     _original_decode_dualrate = core.deterministic_decode_dualrate
     _original_articulation = core.articulation_hybrid_mix
     _original_write_wav = core.write_wav
+    _original_read_audio = core.read_audio
+    _original_crop_oto = core.crop_oto
+
+    def read_audio_wrapper(path, target_sr):
+        if _active():
+            native_detail_probe.capture_native_read(path)
+        return _original_read_audio(path, target_sr)
+
+    def crop_oto_wrapper(audio, sr, offset_ms, cutoff_ms):
+        cropped = _original_crop_oto(audio, sr, offset_ms, cutoff_ms)
+        if _active():
+            native_detail_probe.capture_crop(
+                cropped, sr, offset_ms, cutoff_ms, _original_crop_oto
+            )
+        return cropped
 
     def decode_dualrate_wrapper(*args, **kwargs):
         legacy, fullband, stats = _original_decode_dualrate(*args, **kwargs)
         if _active():
             _reset_dump()
+            native_detail_probe.write_pending_sources(_dump_dir())
             decoder = args[0] if args else kwargs.get("decoder")
             analysis_sr = int(getattr(decoder, "sample_rate", 24000))
             _write_stage("01_ddsp_raw.wav", legacy, analysis_sr)
@@ -257,11 +282,15 @@ def _install():
                 if dump not in target.parents:
                     _write_stage("07_final.wav", audio, sr)
                     _write_comparison_report()
+                    native_detail_probe.write_detail_report(_dump_dir())
             except Exception:
                 _write_stage("07_final.wav", audio, sr)
                 _write_comparison_report()
+                native_detail_probe.write_detail_report(_dump_dir())
         return _original_write_wav(path, audio, sr, volume)
 
+    core.read_audio = read_audio_wrapper
+    core.crop_oto = crop_oto_wrapper
     core.deterministic_decode_dualrate = decode_dualrate_wrapper
     core.articulation_hybrid_mix = articulation_wrapper
     for name in (
