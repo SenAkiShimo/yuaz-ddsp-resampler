@@ -222,16 +222,14 @@ def _install():
     _original_crop_oto = core.crop_oto
 
     def read_audio_wrapper(path, target_sr):
-        if _active():
-            native_detail_probe.capture_native_read(path)
+        native_detail_probe.capture_native_read(path)
         return _original_read_audio(path, target_sr)
 
     def crop_oto_wrapper(audio, sr, offset_ms, cutoff_ms):
         cropped = _original_crop_oto(audio, sr, offset_ms, cutoff_ms)
-        if _active():
-            native_detail_probe.capture_crop(
-                cropped, sr, offset_ms, cutoff_ms, _original_crop_oto
-            )
+        native_detail_probe.capture_crop(
+            cropped, sr, offset_ms, cutoff_ms, _original_crop_oto
+        )
         return cropped
 
     def decode_dualrate_wrapper(*args, **kwargs):
