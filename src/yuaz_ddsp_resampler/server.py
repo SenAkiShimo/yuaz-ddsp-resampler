@@ -113,7 +113,7 @@ class Handler(socketserver.StreamRequestHandler):
                         high_detail = apply_cached_source_high_detail(
                             render_request,
                             render_request["output"],
-                            strength=0.82,
+                            strength=0.94,
                         )
                         response["source_high_detail"] = high_detail
                     self._log_request(render_request, response)
