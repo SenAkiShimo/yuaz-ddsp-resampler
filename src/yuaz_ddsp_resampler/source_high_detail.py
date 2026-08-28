@@ -11,8 +11,9 @@ import numpy as np
 import soundfile as sf
 
 
-CACHE_FORMAT = 1
+CACHE_FORMAT = 2
 CACHE_SR = 48000
+F0_ANALYSIS_SR = 24000
 LOW_HZ = 7600.0
 FULL_HZ = 8400.0
 TOP_HZ = 20000.0
@@ -60,6 +61,92 @@ def _frequency_local_median(mag, radius=4):
     return np.median(windows, axis=-1)
 
 
+def _median_smooth_1d(values, radius=2):
+    x = np.asarray(values, dtype=np.float64).reshape(-1)
+    if x.size < 2 or radius <= 0:
+        return x.copy()
+    padded = np.pad(x, (radius, radius), mode="edge")
+    windows = np.lib.stride_tricks.sliding_window_view(padded, 2 * radius + 1)
+    return np.median(windows, axis=-1)
+
+
+def _estimate_source_f0(y, sr, target_frames):
+    analysis = np.asarray(y, dtype=np.float32).reshape(-1)
+    if int(sr) != F0_ANALYSIS_SR:
+        analysis = librosa.resample(
+            analysis,
+            orig_sr=int(sr),
+            target_sr=F0_ANALYSIS_SR,
+        ).astype(np.float32)
+
+    frame_length = 1024
+    hop = 256
+    try:
+        f0 = librosa.yin(
+            analysis,
+            fmin=55.0,
+            fmax=1100.0,
+            sr=F0_ANALYSIS_SR,
+            frame_length=frame_length,
+            hop_length=hop,
+            center=True,
+        ).astype(np.float64)
+    except Exception:
+        f0 = np.zeros(max(1, int(np.ceil(len(analysis) / hop))), dtype=np.float64)
+
+    rms = librosa.feature.rms(
+        y=analysis,
+        frame_length=frame_length,
+        hop_length=hop,
+        center=True,
+    )[0].astype(np.float64)
+    flatness = librosa.feature.spectral_flatness(
+        y=analysis,
+        n_fft=frame_length,
+        hop_length=hop,
+        center=True,
+    )[0].astype(np.float64)
+
+    frames = min(len(f0), len(rms), len(flatness))
+    if frames <= 0:
+        return np.zeros(target_frames, dtype=np.float64), np.zeros(target_frames, dtype=np.float64)
+    f0 = f0[:frames]
+    rms = rms[:frames]
+    flatness = flatness[:frames]
+
+    finite = np.isfinite(f0) & (f0 >= 55.0) & (f0 <= 1100.0)
+    floor = max(1e-5, float(np.percentile(rms, 18)) * 1.10)
+    voiced = finite & (rms > floor) & (flatness < 0.34)
+
+    f0_seed = np.where(voiced, f0, 0.0)
+    positive = np.flatnonzero(f0_seed > 0.0)
+    if positive.size >= 2:
+        filled = np.interp(np.arange(frames), positive, f0_seed[positive])
+        filled = _median_smooth_1d(filled, radius=2)
+        rel_jump = np.zeros(frames, dtype=np.float64)
+        rel_jump[1:] = np.abs(np.diff(filled)) / np.maximum(filled[:-1], 55.0)
+        voiced &= rel_jump < 0.22
+        f0_seed = np.where(voiced, filled, 0.0)
+
+    src_x = np.linspace(0.0, 1.0, frames)
+    dst_x = np.linspace(0.0, 1.0, int(target_frames))
+    if frames == 1:
+        f0_out = np.full(target_frames, f0_seed[0], dtype=np.float64)
+        voiced_out = np.full(target_frames, float(voiced[0]), dtype=np.float64)
+    else:
+        positive = np.flatnonzero(f0_seed > 0.0)
+        if positive.size >= 2:
+            track = np.interp(np.arange(frames), positive, f0_seed[positive])
+        elif positive.size == 1:
+            track = np.full(frames, f0_seed[positive[0]], dtype=np.float64)
+        else:
+            track = np.zeros(frames, dtype=np.float64)
+        f0_out = np.interp(dst_x, src_x, track)
+        voiced_out = np.interp(dst_x, src_x, voiced.astype(np.float64))
+    f0_out[voiced_out < 0.45] = 0.0
+    return f0_out, np.clip(voiced_out, 0.0, 1.0)
+
+
 def extract_source_high_detail(audio, sr, target_sr=CACHE_SR):
     y = _mono_float(audio)
     source_rms = _rms(y)
@@ -70,6 +157,8 @@ def extract_source_high_detail(audio, sr, target_sr=CACHE_SR):
             "source_rms": source_rms,
             "detail_rms": 0.0,
             "periodic_scrub_mean": 0.0,
+            "f0_voiced_fraction": 0.0,
+            "median_f0_hz": 0.0,
         }
 
     n_fft = 1024
@@ -87,25 +176,41 @@ def extract_source_high_detail(audio, sr, target_sr=CACHE_SR):
     freqs = librosa.fft_frequencies(sr=int(target_sr), n_fft=n_fft)
     band = _soft_band(freqs)[:, None]
 
-    # Narrow stable ridges are the part most likely to carry the recorded F0.
-    # Scrub them offline while retaining broadband/noisy/transient complex detail.
+    f0, voiced = _estimate_source_f0(y, int(target_sr), spec.shape[1])
+    f0_safe = np.maximum(f0, 55.0)[None, :]
+    freq_grid = freqs[:, None]
+    order = np.rint(freq_grid / f0_safe)
+    harmonic_hz = order * f0_safe
+    distance_hz = np.abs(freq_grid - harmonic_hz)
+    width_hz = np.clip(0.20 * f0_safe, 62.0, 105.0)
+    harmonic_proximity = np.exp(-0.5 * np.square(distance_hz / width_hz))
+    harmonic_proximity *= (order >= 2.0)
+    harmonic_proximity *= voiced[None, :]
+
     local_med = _frequency_local_median(mag, radius=4) + 1e-8
     peak_ratio = mag / local_med
-    peakness = np.clip((peak_ratio - 1.55) / 2.80, 0.0, 1.0)
-    high_mix = np.clip((freqs - 10500.0) / 4500.0, 0.0, 1.0)[:, None]
-    min_keep = 0.34 + 0.20 * high_mix
-    periodic_keep = 1.0 - peakness * (1.0 - min_keep)
+    peakness = np.clip((peak_ratio - 1.30) / 2.30, 0.0, 1.0)
 
-    # Do not scrub broadband transient frames just because their strongest bins peak.
+    high_mix = np.clip((freqs - 10000.0) / 6500.0, 0.0, 1.0)[:, None]
+    min_keep = 0.18 + 0.20 * high_mix
+    periodic_score = harmonic_proximity * peakness
+    periodic_keep = 1.0 - periodic_score * (1.0 - min_keep)
+
+    # Broadband onsets/fricatives are the part that improved brutal_high. Restore
+    # them aggressively even when a transient happens to cross harmonic bins.
     frame_flux = np.zeros(mag.shape[1], dtype=np.float64)
     if mag.shape[1] > 1:
         logmag = np.log1p(mag)
         frame_flux[1:] = np.mean(np.maximum(0.0, np.diff(logmag, axis=1)), axis=0)
     if frame_flux.size:
-        p75 = float(np.percentile(frame_flux, 75))
-        p95 = float(np.percentile(frame_flux, 95))
-        transient = np.clip((frame_flux - p75) / max(1e-8, p95 - p75), 0.0, 1.0)[None, :]
-        periodic_keep = periodic_keep + transient * (1.0 - periodic_keep) * 0.72
+        p68 = float(np.percentile(frame_flux, 68))
+        p94 = float(np.percentile(frame_flux, 94))
+        transient = np.clip((frame_flux - p68) / max(1e-8, p94 - p68), 0.0, 1.0)[None, :]
+        periodic_keep += transient * (1.0 - periodic_keep) * 0.88
+
+    # Unvoiced/noisy frames should be essentially untouched by pitch scrubbing.
+    periodic_keep += (1.0 - voiced[None, :]) * (1.0 - periodic_keep) * 0.96
+    periodic_keep = np.clip(periodic_keep, 0.0, 1.0)
 
     filtered = spec * band * periodic_keep
     detail = librosa.istft(
@@ -117,10 +222,16 @@ def extract_source_high_detail(audio, sr, target_sr=CACHE_SR):
         length=len(y),
     ).astype(np.float32)
     detail = np.nan_to_num(detail)
+
+    voiced_f0 = f0[f0 > 0.0]
+    band_weight = np.broadcast_to(band, periodic_keep.shape)
+    weighted_scrub = (1.0 - periodic_keep) * band_weight
     return detail, {
         "source_rms": float(source_rms),
         "detail_rms": _rms(detail),
-        "periodic_scrub_mean": float(np.mean(1.0 - periodic_keep)),
+        "periodic_scrub_mean": float(weighted_scrub.sum() / max(1.0, band_weight.sum())),
+        "f0_voiced_fraction": float(np.mean(voiced >= 0.45)),
+        "median_f0_hz": float(np.median(voiced_f0)) if voiced_f0.size else 0.0,
     }
 
 
@@ -188,7 +299,7 @@ def build_voicebank_cache(voicebank_root):
         "low_hz": LOW_HZ,
         "full_hz": FULL_HZ,
         "top_hz": TOP_HZ,
-        "extraction": "complex-highband-narrow-ridge-scrub-v1",
+        "extraction": "source-f0-aware-complex-high-detail-v2",
         "entries": entries,
         "files": len(entries),
         "build_seconds": float(time.perf_counter() - started),
@@ -196,6 +307,7 @@ def build_voicebank_cache(voicebank_root):
     tmp = cache_dir / ".index.json.tmp"
     tmp.write_text(json.dumps(index, indent=2, ensure_ascii=False), encoding="utf-8")
     os.replace(tmp, cache_dir / "index.json")
+    _INDEX_CACHE.clear()
     print(f"Prepared {len(entries)} source high-detail files in {index['build_seconds']:.2f}s")
     print(f"Cache: {cache_dir}")
     return index
@@ -216,9 +328,16 @@ def _find_cache(input_path):
                 _INDEX_CACHE[key] = (mtime, data)
             else:
                 data = cached[1]
+            if int(data.get("format", 0)) != CACHE_FORMAT:
+                continue
             rel = source.relative_to(parent).as_posix()
             record = (data.get("entries") or {}).get(rel)
             if not record:
+                continue
+            stat = source.stat()
+            if int(record.get("source_size", -1)) != int(stat.st_size):
+                continue
+            if int(record.get("source_mtime_ns", -1)) != int(stat.st_mtime_ns):
                 continue
             cache_file = index_path.parent / record["file"]
             if cache_file.is_file():
@@ -270,10 +389,10 @@ def _highpass_branch(audio, sr):
     return np.fft.irfft(spec * mask, n=len(y)).real.astype(np.float32)
 
 
-def apply_cached_source_high_detail(req, output_path, strength=0.82):
+def apply_cached_source_high_detail(req, output_path, strength=0.94):
     root, cache_file, record = _find_cache(req.get("input", ""))
     if cache_file is None:
-        return {"used": False, "reason": "no-cache"}
+        return {"used": False, "reason": "no-valid-v2-cache"}
 
     try:
         from .core import crop_oto
@@ -300,20 +419,22 @@ def apply_cached_source_high_detail(req, output_path, strength=0.82):
         final_rms = max(_rms(final), 1e-8)
         warped *= float(np.clip(final_rms / source_rms, 0.18, 5.0))
 
-        # Preserve the effective brutal-high mechanism, but only with the offline
-        # periodicity-scrubbed source branch. Runtime does one FFT, not STFT/DTW.
         final_high = _highpass_branch(final, int(output_sr))
         branch_rms = _rms(warped)
-        branch_cap = final_rms * 0.22
+        branch_cap = final_rms * 0.30
         cap_gain = 1.0
         if branch_rms > branch_cap > 1e-9:
             cap_gain = branch_cap / branch_rms
             warped *= cap_gain
             branch_rms *= cap_gain
 
+        # Keep most target-F0 high harmonics. Replace only part of Yuaz's generic
+        # upper-band texture with cached source aperiodic/transient microstructure.
+        generic_replacement = 0.42
         mix = float(np.clip(strength, 0.0, 1.0))
         out = final.astype(np.float64) + mix * (
-            warped.astype(np.float64) - final_high.astype(np.float64)
+            warped.astype(np.float64)
+            - generic_replacement * final_high.astype(np.float64)
         )
         peak = float(np.max(np.abs(out))) if out.size else 0.0
         safety = 1.0
@@ -332,11 +453,14 @@ def apply_cached_source_high_detail(req, output_path, strength=0.82):
 
         return {
             "used": True,
-            "backend": "cached-source-complex-high-detail-v1",
+            "backend": "cached-source-f0-aware-high-detail-v2",
             "cache": str(cache_file),
             "strength": mix,
+            "generic_replacement": float(generic_replacement),
             "branch_rms": float(branch_rms),
             "branch_cap_gain": float(cap_gain),
+            "source_median_f0_hz": float(record.get("median_f0_hz", 0.0)),
+            "source_f0_voiced_fraction": float(record.get("f0_voiced_fraction", 0.0)),
             "output_safety_gain": float(safety),
         }
     except Exception as exc:
