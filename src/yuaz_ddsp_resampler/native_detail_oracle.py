@@ -2,6 +2,7 @@
 import argparse
 import json
 import math
+import shutil
 from pathlib import Path
 
 import librosa
@@ -122,11 +123,15 @@ def _dtw_map(source, final, sr, hop, dst_frames):
 
 
 def _warp_frames(matrix, mapping):
-    matrix = np.asarray(matrix, dtype=np.float64)
+    matrix = np.asarray(matrix)
     if matrix.shape[1] <= 1:
         return np.repeat(matrix[:, :1], len(mapping), axis=1)
     source_x = np.arange(matrix.shape[1], dtype=np.float64)
     mapping = np.clip(mapping, 0.0, matrix.shape[1] - 1)
+    if np.iscomplexobj(matrix):
+        real = np.vstack([np.interp(mapping, source_x, row.real) for row in matrix])
+        imag = np.vstack([np.interp(mapping, source_x, row.imag) for row in matrix])
+        return real + 1j * imag
     return np.vstack([np.interp(mapping, source_x, row) for row in matrix])
 
 
@@ -146,7 +151,72 @@ def _band_rms(y, sr, lo, hi):
     )
 
 
-def _build_oracle(source, final, sr, mode, strength):
+def _match_source_level(src_log, fin_log, freqs):
+    anchor = (freqs >= 900.0) & (freqs <= min(3600.0, freqs[-1] - 100.0))
+    if not np.any(anchor):
+        return src_log
+    offset = np.median(fin_log[anchor, :] - src_log[anchor, :], axis=0)
+    offset = _moving_average(offset.reshape(1, -1), 3, axis=1).reshape(-1)
+    offset = np.clip(offset, -2.3, 2.3)
+    return src_log + offset[None, :]
+
+
+def _hybrid_phase(fin_spec, fin_mag, seed):
+    rng = np.random.default_rng(int(seed))
+    random_phase = np.exp(1j * rng.uniform(-np.pi, np.pi, size=fin_spec.shape))
+    final_phase = fin_spec / np.maximum(fin_mag, EPS)
+
+    frame_peak = np.max(fin_mag, axis=0, keepdims=True)
+    threshold = np.maximum(frame_peak * 2.5e-3, 2.5e-7)
+    present = np.clip((fin_mag - threshold) / np.maximum(3.0 * threshold, EPS), 0.0, 1.0)
+    phase = present * final_phase + (1.0 - present) * random_phase
+    phase /= np.maximum(np.abs(phase), EPS)
+    return phase, present
+
+
+def _source_targets(src_log_matched, freqs, sr, n_fft):
+    bin_hz = sr / float(n_fft)
+    safe_mid_radius = max(1, int(round(220.0 / bin_hz)))
+    safe_high_radius = max(1, int(round(480.0 / bin_hz)))
+
+    safe_mid_log = _moving_average(src_log_matched, safe_mid_radius, axis=0)
+    safe_high_log = _moving_average(src_log_matched, safe_high_radius, axis=0)
+
+    time_radius = 3
+    safe_mid_log += 0.55 * (
+        safe_mid_log - _moving_average(safe_mid_log, time_radius, axis=1)
+    )
+    safe_high_log += 0.70 * (
+        safe_high_log - _moving_average(safe_high_log, time_radius, axis=1)
+    )
+
+    upper_radius = max(1, int(round(55.0 / bin_hz)))
+    upper_log = _moving_average(src_log_matched, upper_radius, axis=0)
+
+    return {
+        "safe_mid": np.exp(np.clip(safe_mid_log, -18.0, 6.0)),
+        "safe_high": np.exp(np.clip(safe_high_log, -18.0, 6.0)),
+        "upper": np.exp(np.clip(upper_log, -18.0, 6.0)),
+    }
+
+
+def _limit_residual(final, out, limit_ratio):
+    residual = np.asarray(out - final, dtype=np.float32)
+    fr = _rms(final)
+    rr = _rms(residual)
+    limit = float(limit_ratio) * fr
+    if rr > limit > 1e-9:
+        residual *= float(limit / rr)
+        out = final + residual
+    peak = float(np.max(np.abs(out))) if len(out) else 0.0
+    if peak > 1.15:
+        scale = 1.15 / peak
+        out = out * scale
+        residual = out - final
+    return np.asarray(out, dtype=np.float32), np.asarray(residual, dtype=np.float32)
+
+
+def _build_oracle(source, final, sr, mode, style, strength):
     n_fft = 2048 if sr >= 32000 else 1024
     hop = max(64, n_fft // 16)
     window = np.hanning(n_fft).astype(np.float32)
@@ -169,7 +239,6 @@ def _build_oracle(source, final, sr, mode, strength):
     )
     src_mag = np.maximum(np.abs(src_spec).astype(np.float64), EPS)
     fin_mag = np.maximum(np.abs(fin_spec).astype(np.float64), EPS)
-    fin_phase = fin_spec / np.maximum(np.abs(fin_spec), EPS)
 
     mapping, alignment = _dtw_map(source, final, sr, hop, fin_mag.shape[1])
     if src_mag.shape[1] > 1:
@@ -179,69 +248,55 @@ def _build_oracle(source, final, sr, mode, strength):
     fin_log = np.log(fin_mag)
 
     freqs = librosa.fft_frequencies(sr=sr, n_fft=n_fft)
-    bin_hz = sr / float(n_fft)
-
-    mid_radius = max(1, int(round(320.0 / bin_hz)))
-    high_radius = max(1, int(round(650.0 / bin_hz)))
-    mid_src = _moving_average(src_log, mid_radius, axis=0)
-    mid_fin = _moving_average(fin_log, mid_radius, axis=0)
-    high_src = _moving_average(src_log, high_radius, axis=0)
-    high_fin = _moving_average(fin_log, high_radius, axis=0)
-
-    time_radius = max(1, int(round(0.024 * sr / hop)))
-    fast_mid_src = mid_src - _moving_average(mid_src, time_radius, axis=1)
-    fast_mid_fin = mid_fin - _moving_average(mid_fin, time_radius, axis=1)
-    fast_high_src = high_src - _moving_average(high_src, time_radius, axis=1)
-    fast_high_fin = high_fin - _moving_average(high_fin, time_radius, axis=1)
-
-    mid_delta = mid_src - mid_fin
-    high_delta = high_src - high_fin
-    mid_region = (freqs >= 1800.0) & (freqs <= min(8500.0, sr * 0.5 - 100.0))
-    high_region = (freqs >= 7500.0) & (freqs <= min(20000.0, sr * 0.5 - 100.0))
-    if np.any(mid_region):
-        mid_delta -= np.median(mid_delta[mid_region, :])
-    if np.any(high_region):
-        high_delta -= np.median(high_delta[high_region, :])
-
-    mid_transfer = 0.48 * mid_delta + 0.90 * (fast_mid_src - fast_mid_fin)
-    high_transfer = 0.58 * high_delta + 1.00 * (fast_high_src - fast_high_fin)
+    src_log = _match_source_level(src_log, fin_log, freqs)
+    targets = _source_targets(src_log, freqs, sr, n_fft)
 
     nyquist = sr * 0.5
     mid_mask = _raised_band(
         freqs,
-        2000.0,
+        1800.0,
         min(8000.0, nyquist - 300.0),
-        500.0,
+        550.0,
     )
     high_mask = _raised_band(
         freqs,
-        8000.0,
+        7600.0,
         min(20000.0, nyquist - 250.0),
-        750.0,
+        800.0,
     )
 
     if mode == "mid":
-        transfer = mid_transfer
         mask = mid_mask
+        src_target = targets["safe_mid"] if style == "safe" else targets["upper"]
     elif mode == "high":
-        transfer = high_transfer
         mask = high_mask
+        src_target = targets["safe_high"] if style == "safe" else targets["upper"]
     elif mode == "both":
         mask = np.maximum(mid_mask, high_mask)
-        transfer = (
-            mid_transfer * mid_mask[:, None]
-            + high_transfer * high_mask[:, None]
-        ) / np.maximum(mask[:, None], EPS)
+        if style == "safe":
+            src_target = (
+                targets["safe_mid"] * mid_mask[:, None]
+                + targets["safe_high"] * high_mask[:, None]
+            ) / np.maximum(mask[:, None], EPS)
+        else:
+            src_target = targets["upper"]
     else:
         raise ValueError(mode)
 
-    max_db = 12.0 if mode == "high" else 10.0
-    log_limit = max_db * math.log(10.0) / 20.0
-    gain_log = np.clip(float(strength) * transfer, -log_limit, log_limit)
-    gain_log *= mask[:, None]
+    # v2 is deliberately additive/reconstructive rather than multiplicative.
+    # Missing final bins can now receive real source-derived magnitude.
+    desired = np.maximum(fin_mag, src_target)
+    if style == "safe":
+        desired = np.minimum(desired, np.maximum(fin_mag * 7.0, np.median(src_target, axis=0, keepdims=True) * 5.0))
+    else:
+        desired = np.minimum(desired, np.maximum(fin_mag * 14.0, np.median(src_target, axis=0, keepdims=True) * 9.0))
 
-    out_mag = fin_mag * np.exp(gain_log)
-    out_spec = out_mag * fin_phase
+    blend = np.clip(float(strength) * mask[:, None], 0.0, 1.0)
+    out_mag = fin_mag * (1.0 - blend) + desired * blend
+
+    seed = 20260828 + (0 if style == "safe" else 1000) + {"mid": 1, "high": 2, "both": 3}[mode]
+    phase, presence = _hybrid_phase(fin_spec, fin_mag, seed)
+    out_spec = out_mag * phase
     out = librosa.istft(
         out_spec,
         hop_length=hop,
@@ -251,9 +306,15 @@ def _build_oracle(source, final, sr, mode, strength):
         length=len(final),
     ).astype(np.float32)
 
-    residual = (out - final).astype(np.float32)
+    out, residual = _limit_residual(
+        final,
+        out,
+        0.30 if style == "safe" else 0.55,
+    )
+
     final_rms = _rms(final)
     stats = {
+        "style": style,
         "mode": mode,
         "alignment": alignment,
         "strength": float(strength),
@@ -263,6 +324,7 @@ def _build_oracle(source, final, sr, mode, strength):
         "residual_rms": _rms(residual),
         "final_rms": final_rms,
         "residual_percent": 100.0 * _rms(residual) / max(final_rms, 1e-9),
+        "random_phase_fraction": float(np.mean(1.0 - presence)),
         "bands": {},
     }
     for lo, hi, label in (
@@ -315,37 +377,46 @@ def main():
         source *= float(np.clip(final_rms / source_rms, 0.25, 4.0))
 
     out_dir = dump / "oracle"
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     sf.write(out_dir / "00_final_reference.wav", final, sr, subtype="FLOAT")
     sf.write(out_dir / "00_source_reference.wav", source, sr, subtype="FLOAT")
 
     report = {
+        "format": 2,
         "source": str(source_path),
         "final": str(final_path),
         "source_original_sr": int(source_sr),
         "analysis_sr": sr,
         "strength": float(args.strength),
         "source_phase_used": False,
-        "final_phase_preserved": True,
-        "narrow_harmonic_transfer": False,
+        "missing_bins_can_be_created": True,
+        "safe": "frequency-smoothed source envelope plus temporal detail; hybrid final/random phase",
+        "upper": "lightly smoothed source magnitude upper-bound diagnostic; hybrid final/random phase",
         "oracles": {},
     }
 
-    for mode in ("mid", "high", "both"):
-        out, residual, stats = _build_oracle(
-            source,
-            final,
-            sr,
-            mode,
-            args.strength,
-        )
-        sf.write(out_dir / f"oracle_{mode}.wav", out, sr, subtype="FLOAT")
-        sf.write(out_dir / f"residual_{mode}.wav", residual, sr, subtype="FLOAT")
-        report["oracles"][mode] = stats
-        print(
-            f"{mode}: residual/final={stats['residual_percent']:.2f}% "
-            f"alignment={stats['alignment']}"
-        )
+    for style in ("safe", "upper"):
+        for mode in ("mid", "high", "both"):
+            out, residual, stats = _build_oracle(
+                source,
+                final,
+                sr,
+                mode,
+                style,
+                args.strength,
+            )
+            key = f"{style}_{mode}"
+            sf.write(out_dir / f"oracle_{key}.wav", out, sr, subtype="FLOAT")
+            sf.write(out_dir / f"residual_{key}.wav", residual, sr, subtype="FLOAT")
+            report["oracles"][key] = stats
+            print(
+                f"{key}: residual/final={stats['residual_percent']:.2f}% "
+                f"alignment={stats['alignment']} "
+                f"8-12k={stats['bands']['8-12k']['energy_ratio']:.2f}x "
+                f"12-20k={stats['bands']['12-20k']['energy_ratio']:.2f}x"
+            )
 
     (out_dir / "oracle_report.json").write_text(
         json.dumps(report, indent=2, ensure_ascii=False),
