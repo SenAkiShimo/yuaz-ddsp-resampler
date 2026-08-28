@@ -55,6 +55,7 @@ from . import core as _core
 from .core import YuazDDSPResamplerEngine
 from . import clarity_ab
 from .controls import parse_yuaz_controls
+from .source_high_detail import apply_cached_source_high_detail
 from .state import atomic_write_json
 
 clarity_ab.set_mode(0.0)
@@ -108,6 +109,13 @@ class Handler(socketserver.StreamRequestHandler):
                         except Exception:
                             pass
                     response = State.engine.render(render_request)
+                    if response.get("ok") and not response.get("yuaz_raw_bypass"):
+                        high_detail = apply_cached_source_high_detail(
+                            render_request,
+                            render_request["output"],
+                            strength=0.82,
+                        )
+                        response["source_high_detail"] = high_detail
                     self._log_request(render_request, response)
                 finally:
                     with State.active_lock:
