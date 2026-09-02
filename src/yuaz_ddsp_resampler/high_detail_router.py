@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-HIGH_DETAIL_ROUTER_FORMAT = 2
+HIGH_DETAIL_ROUTER_FORMAT = 3
 
 
 class RouterBlock(nn.Module):
@@ -43,8 +43,8 @@ class HighDetailRouter(nn.Module):
         self.output = nn.Conv1d(self.hidden, 2, kernel_size=3, padding=1)
         nn.init.zeros_(self.output.weight)
         with torch.no_grad():
-            self.output.bias[0] = 0.30
-            self.output.bias[1] = -1.05
+            self.output.bias[0] = 0.18
+            self.output.bias[1] = -4.0
 
     def _frame_envelope(self, x):
         hop = max(16, int(self.frame_hop))
@@ -144,21 +144,31 @@ class HighDetailRouter(nn.Module):
             h = block(h)
         controls = self.output(h)
 
-        # v2: source detail is the primary mechanism. Generated-highband ducking is
-        # deliberately bounded to a small amount so it cannot become a shortcut.
-        inject_frames = 0.08 + 1.12 * torch.sigmoid(controls[:, 0:1, :])
-        suppress_frames = 0.12 * torch.sigmoid(controls[:, 1:2, :])
+        # v3 learns only how much source high-detail to route. There is no learned
+        # generated-highband suppression path, so muting Yuaz cannot minimize loss.
+        inject_frames = 1.35 * torch.sigmoid(controls[:, 0:1, :])
         inject = F.interpolate(inject_frames, size=n, mode="linear", align_corners=False)
-        suppress = F.interpolate(suppress_frames, size=n, mode="linear", align_corners=False)
+        suppress_frames = torch.zeros_like(inject_frames)
 
-        residual = inject * source_detail - suppress * base_high
+        residual = inject * source_detail
         base_rms = torch.sqrt(torch.mean(base.pow(2), dim=-1, keepdim=True) + 1e-8)
         residual_rms = torch.sqrt(torch.mean(residual.pow(2), dim=-1, keepdim=True) + 1e-8)
         limit = 0.30 * base_rms + 1e-7
         scale = torch.clamp(limit / (residual_rms + 1e-8), max=1.0)
         residual = residual * scale
         refined = torch.clamp(base + residual, -1.2, 1.2)
-        return refined, residual, inject_frames, suppress_frames, base_high
+
+        # The legacy trainer adds generic control/residual regularizers. v3's
+        # teacher already constrains detail energy, so return detached monitoring
+        # tensors to prevent those old regularizers from recreating a zero-detail
+        # shortcut while preserving their reported values.
+        return (
+            refined,
+            residual.detach(),
+            inject_frames.detach(),
+            suppress_frames.detach(),
+            base_high,
+        )
 
     def summary(self):
         return {
