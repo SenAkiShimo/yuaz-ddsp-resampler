@@ -12,12 +12,12 @@ def require(condition, label):
     if not condition:
         raise AssertionError(f"self-test failed: {label}")
 
-require((root/'VERSION').read_text().strip()=='0.2.9', 'VERSION is not 0.2.9')
+require((root/'VERSION').read_text().strip()=='0.3.0', 'VERSION is not 0.3.0')
 client=(root/'src/yuaz_ddsp_resampler/client.py').read_text()
 server=(root/'src/yuaz_ddsp_resampler/server.py').read_text()
-require('ENGINE_VERSION = "0.2.9"' in client, 'client engine version')
-require('DEFAULT_PORT = 47888' in client, 'client production port')
-require('ENGINE_VERSION = "0.2.9"' in server, 'server engine version')
+require('ENGINE_VERSION = "0.3.0"' in client, 'client engine version')
+require('DEFAULT_PORT = 47889' in client, 'client production port')
+require('ENGINE_VERSION = "0.3.0"' in server, 'server engine version')
 controls=(root/'src/yuaz_ddsp_resampler/ai_vocal_controls.py').read_text()
 require('mask = (strength > 1e-6).to(c.dtype) * voiced' in controls, 'AI control voiced mask')
 require('control_gate_mode": "source-active-voiced"' in controls, 'AI control gate mode')
@@ -44,7 +44,7 @@ for label, expected in (
 ):
     require(expected in vocal, label)
 install=(root/'scripts/install-openutau-macos.command').read_text()
-require('0.2.9' in install, 'installer version')
+require('0.3.0' in install, 'installer version')
 require('.yuaz-0.2.8ai14' in install, 'ai.14 state namespace')
 require('preserve_ai14' in install, 'ai.14 preservation')
 prepare=(root/'scripts/prepare-voicebank.command').read_text()
@@ -54,4 +54,4 @@ require('disabled' in deep.lower(), 'voicebank deep training must remain disable
 PY
 python3 -m compileall -q "$ROOT/src"
 while IFS= read -r -d '' f; do bash -n "$f"; done < <(find "$ROOT" -type f -name '*.command' -not -path '*/previous_versions/*' -print0)
-echo "0.2.9 self-test OK"
+echo "0.3.0 self-test OK"
