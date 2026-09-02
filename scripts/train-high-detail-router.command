@@ -28,16 +28,16 @@ if [ ! -d "$VOICEBANK" ]; then
   exit 1
 fi
 
-PAIRS="${YUAZ_HIGH_DETAIL_PAIRS:-48}"
-EPOCHS="${YUAZ_HIGH_DETAIL_EPOCHS:-4}"
-LR="${YUAZ_HIGH_DETAIL_LR:-0.0007}"
+PAIRS="${YUAZ_HIGH_DETAIL_PAIRS:-96}"
+EPOCHS="${YUAZ_HIGH_DETAIL_EPOCHS:-6}"
+LR="${YUAZ_HIGH_DETAIL_LR:-0.0004}"
 
 export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
-"$ROOT/.venv/bin/python" -m yuaz_ddsp_resampler.train_high_detail_router_v3 \
+"$ROOT/.venv/bin/python" -m yuaz_ddsp_resampler.train_high_detail_tf \
   "$VOICEBANK" \
   --project-root "$ROOT" \
   --pairs "$PAIRS" \
   --epochs "$EPOCHS" \
   --lr "$LR"
 
-open "$ROOT/high-detail-router-output/examples" 2>/dev/null || true
+open "$ROOT/high-detail-tf-output/examples" 2>/dev/null || true
