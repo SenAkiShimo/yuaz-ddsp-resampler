@@ -55,6 +55,7 @@ from . import core as _core
 from .core import YuazDDSPResamplerEngine
 from . import clarity_ab
 from .controls import parse_yuaz_controls
+from .high_detail_complex_runtime import apply_high_detail_complex
 from .high_detail_tf_runtime import apply_high_detail_tf
 from .source_high_detail import apply_cached_source_high_detail
 from .state import atomic_write_json
@@ -111,18 +112,25 @@ class Handler(socketserver.StreamRequestHandler):
                             pass
                     response = State.engine.render(render_request)
                     if response.get("ok") and not response.get("yuaz_raw_bypass"):
-                        high_detail = apply_high_detail_tf(
+                        high_detail = apply_high_detail_complex(
                             State.engine,
                             render_request,
                             render_request["output"],
                         )
                         if not high_detail.get("used"):
-                            fallback = apply_cached_source_high_detail(
+                            tf_fallback = apply_high_detail_tf(
+                                State.engine,
                                 render_request,
                                 render_request["output"],
-                                strength=0.94,
                             )
-                            high_detail["fallback"] = fallback
+                            high_detail["tf_fallback"] = tf_fallback
+                            if not tf_fallback.get("used"):
+                                legacy_fallback = apply_cached_source_high_detail(
+                                    render_request,
+                                    render_request["output"],
+                                    strength=0.94,
+                                )
+                                high_detail["legacy_fallback"] = legacy_fallback
                         response["source_high_detail"] = high_detail
                     self._log_request(render_request, response)
                 finally:
