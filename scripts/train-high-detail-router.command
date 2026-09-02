@@ -33,7 +33,7 @@ EPOCHS="${YUAZ_HIGH_DETAIL_EPOCHS:-4}"
 LR="${YUAZ_HIGH_DETAIL_LR:-0.0007}"
 
 export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
-"$ROOT/.venv/bin/python" -m yuaz_ddsp_resampler.train_high_detail_router_v2 \
+"$ROOT/.venv/bin/python" -m yuaz_ddsp_resampler.train_high_detail_router_v3 \
   "$VOICEBANK" \
   --project-root "$ROOT" \
   --pairs "$PAIRS" \
