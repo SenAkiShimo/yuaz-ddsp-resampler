@@ -11,6 +11,7 @@ import torch.nn.functional as F
 
 from . import core
 from .high_detail_tf_runtime import _exact_f0_tracks
+from .native_detail_oracle import _dtw_map, _warp_frames
 from .voicebank import parse_oto_file
 
 
@@ -139,6 +140,53 @@ def _f0_frames(f0, frames):
     return F.interpolate(f0, size=int(frames), mode="linear", align_corners=False)
 
 
+def _warp_f0_with_mapping(f0, source_frames, mapping, device):
+    track = _f0_frames(f0, source_frames)[0, 0].detach().cpu().numpy().astype(np.float64)
+    if track.size <= 1:
+        warped = np.full(len(mapping), track[0] if track.size else 0.0, dtype=np.float32)
+    else:
+        warped = np.interp(
+            np.asarray(mapping, dtype=np.float64),
+            np.arange(track.size, dtype=np.float64),
+            track,
+        ).astype(np.float32)
+    return torch.from_numpy(warped).view(1, 1, -1).to(device)
+
+
+def _dtw_refine(source, final, source_spec, source_f0, sr, dst_frames):
+    mapping, alignment = _dtw_map(source, final, int(sr), HOP, int(dst_frames))
+    source_feature_frames = max(1, int(len(source) // HOP) + 1)
+    if source_spec.shape[-1] > 1:
+        mapping = mapping * (
+            float(source_spec.shape[-1] - 1) / float(max(1, source_feature_frames - 1))
+        )
+    mapping = np.clip(mapping, 0.0, max(0, source_spec.shape[-1] - 1))
+
+    src_np = source_spec[0].detach().cpu().numpy()
+    warped_np = _warp_frames(src_np, mapping).astype(np.complex64)
+    warped_spec = torch.from_numpy(warped_np).unsqueeze(0).to(source_spec.device)
+    warped_f0 = _warp_f0_with_mapping(
+        source_f0,
+        source_spec.shape[-1],
+        mapping,
+        source_spec.device,
+    )
+
+    linear = np.linspace(
+        0.0,
+        max(0, source_spec.shape[-1] - 1),
+        int(dst_frames),
+        dtype=np.float64,
+    )
+    mean_shift_ms = float(np.mean(np.abs(mapping - linear)) * HOP * 1000.0 / float(sr))
+    max_shift_ms = float(np.max(np.abs(mapping - linear)) * HOP * 1000.0 / float(sr))
+    return warped_spec, warped_f0, {
+        "alignment": str(alignment),
+        "dtw_mean_shift_ms": mean_shift_ms,
+        "dtw_max_shift_ms": max_shift_ms,
+    }
+
+
 def _harmonic_mask(freqs, f0, frames, width=0.18):
     track = _f0_frames(f0, frames)
     voiced = (track > 1.0).to(track.dtype)
@@ -178,8 +226,8 @@ def _frame_activity(source_aper_spec, highband, source_voiced):
     voiced = source_voiced
     if voiced.shape[-1] != energy.shape[-1]:
         voiced = F.interpolate(voiced, size=energy.shape[-1], mode="nearest")
-    replacement = 0.58 + 0.26 * (1.0 - voiced) + 0.16 * transient
-    return torch.clamp(replacement, 0.52, 0.94), transient
+    replacement = 0.72 + 0.20 * (1.0 - voiced) + 0.14 * transient
+    return torch.clamp(replacement, 0.68, 0.98), transient
 
 
 def _band_rms(audio, sr, lo, hi):
@@ -247,17 +295,28 @@ def apply_high_detail_complex(engine, req, output_path):
             frames = min(final_spec.shape[-1], source_spec.shape[-1])
             final_spec = final_spec[..., :frames]
             source_spec = source_spec[..., :frames]
+
+            source_spec, source_f0_dtw, dtw_stats = _dtw_refine(
+                source,
+                final,
+                source_spec,
+                source_f0,
+                int(output_sr),
+                frames,
+            )
+            source_spec = source_spec[..., :frames]
+
             freqs = torch.linspace(
                 0.0, float(output_sr) * 0.5, final_spec.shape[1],
                 device=engine.device, dtype=base_t.dtype,
             )
             highband = _soft_highband(freqs, int(output_sr))
-            source_harm, source_voiced = _harmonic_mask(freqs, source_f0, frames, width=0.16)
+            source_harm, source_voiced = _harmonic_mask(freqs, source_f0_dtw, frames, width=0.16)
             target_harm, target_voiced = _harmonic_mask(freqs, target_f0, frames, width=0.16)
 
             source_harm_spec = source_spec * source_harm
             source_aper_spec = source_spec * (1.0 - source_harm)
-            remapped_harm = _remap_harmonic_complex(source_harm_spec, source_f0, target_f0) * target_harm
+            remapped_harm = _remap_harmonic_complex(source_harm_spec, source_f0_dtw, target_f0) * target_harm
 
             hb = highband.view(1, -1, 1)
             final_harm = final_spec * target_harm
@@ -268,7 +327,7 @@ def apply_high_detail_complex(engine, req, output_path):
             target_voiced_f = target_voiced
             if target_voiced_f.shape[-1] != frames:
                 target_voiced_f = F.interpolate(target_voiced_f, size=frames, mode="nearest")
-            harmonic_mix_frame = 0.34 + 0.16 * transient
+            harmonic_mix_frame = 0.46 + 0.20 * transient
             harmonic_mix_frame = harmonic_mix_frame * target_voiced_f
             harmonic_mix = harmonic_mix_frame.expand(-1, final_spec.shape[1], -1) * hb
 
@@ -289,7 +348,7 @@ def apply_high_detail_complex(engine, req, output_path):
         out = out_t[0, 0].detach().cpu().numpy().astype(np.float64)
         residual = out - final.astype(np.float64)
         residual_rms = _rms(residual)
-        cap = frms * 0.42
+        cap = frms * 0.55
         cap_gain = 1.0
         if residual_rms > cap > 1e-9:
             cap_gain = cap / residual_rms
@@ -325,7 +384,7 @@ def apply_high_detail_complex(engine, req, output_path):
         elapsed = (time.perf_counter() - started) * 1000.0
         return {
             "used": True,
-            "backend": "raw-complex-pitch-remap-replacement-v1",
+            "backend": "raw-complex-dtw-pitch-remap-replacement-v2",
             "replacement_mean": float(replacement[:, highband > 0.2, :].mean().detach().cpu()),
             "harmonic_mix_mean": float(harmonic_mix[:, highband > 0.2, :].mean().detach().cpu()),
             "transient_mean": float(transient.mean().detach().cpu()),
@@ -337,6 +396,7 @@ def apply_high_detail_complex(engine, req, output_path):
             "bands": bands,
             "runtime_ms": float(elapsed),
             **landmark_stats,
+            **dtw_stats,
         }
     except Exception as exc:
         return {"used": False, "reason": str(exc)}
