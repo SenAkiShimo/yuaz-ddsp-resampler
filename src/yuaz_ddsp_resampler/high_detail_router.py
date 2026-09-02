@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-HIGH_DETAIL_ROUTER_FORMAT = 1
+HIGH_DETAIL_ROUTER_FORMAT = 2
 
 
 class RouterBlock(nn.Module):
@@ -28,15 +28,6 @@ class RouterBlock(nn.Module):
 
 
 class HighDetailRouter(nn.Module):
-    """Route cached source high-detail into a target-F0 Yuaz render.
-
-    The model never synthesizes arbitrary waveform detail. The source complex/high
-    waveform is the carrier, so its transient microstructure survives. The network
-    predicts only two slow control curves: source-detail injection and generic-Yuaz
-    highband suppression. This keeps runtime light and makes source-F0 leakage
-    learnable rather than hard-coded.
-    """
-
     def __init__(self, sample_rate=44100, hidden=32, frame_hop=128):
         super().__init__()
         self.sample_rate = int(sample_rate)
@@ -52,8 +43,6 @@ class HighDetailRouter(nn.Module):
         self.output = nn.Conv1d(self.hidden, 2, kernel_size=3, padding=1)
         nn.init.zeros_(self.output.weight)
         with torch.no_grad():
-            # Initial behavior is useful but conservative: inject source detail,
-            # only lightly suppress the generated highband.
             self.output.bias[0] = 0.30
             self.output.bias[1] = -1.05
 
@@ -155,15 +144,17 @@ class HighDetailRouter(nn.Module):
             h = block(h)
         controls = self.output(h)
 
-        inject_frames = 1.28 * torch.sigmoid(controls[:, 0:1, :])
-        suppress_frames = 0.62 * torch.sigmoid(controls[:, 1:2, :])
+        # v2: source detail is the primary mechanism. Generated-highband ducking is
+        # deliberately bounded to a small amount so it cannot become a shortcut.
+        inject_frames = 0.08 + 1.12 * torch.sigmoid(controls[:, 0:1, :])
+        suppress_frames = 0.12 * torch.sigmoid(controls[:, 1:2, :])
         inject = F.interpolate(inject_frames, size=n, mode="linear", align_corners=False)
         suppress = F.interpolate(suppress_frames, size=n, mode="linear", align_corners=False)
 
         residual = inject * source_detail - suppress * base_high
         base_rms = torch.sqrt(torch.mean(base.pow(2), dim=-1, keepdim=True) + 1e-8)
         residual_rms = torch.sqrt(torch.mean(residual.pow(2), dim=-1, keepdim=True) + 1e-8)
-        limit = 0.34 * base_rms + 1e-7
+        limit = 0.30 * base_rms + 1e-7
         scale = torch.clamp(limit / (residual_rms + 1e-8), max=1.0)
         residual = residual * scale
         refined = torch.clamp(base + residual, -1.2, 1.2)
