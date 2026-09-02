@@ -54,7 +54,7 @@ _state.lookup_local_record = _lookup_local_record_runtime_compatible
 from .core import YuazDDSPResamplerEngine
 from .state import atomic_write_json
 
-ENGINE_VERSION = "0.2.9"
+ENGINE_VERSION = "0.3.0"
 
 
 class State:
@@ -130,7 +130,7 @@ def main():
     config = json.loads(config_path.read_text(encoding="utf-8"))
     root = config_path.parent.resolve()
     host = config.get("host", "127.0.0.1")
-    port = int(config.get("port", 47888))
+    port = int(config.get("port", 47889))
     State.runtime_id = str(config.get("runtime_id") or ENGINE_VERSION)
     State.runtime_root = root
     pidfile = root / "engine.pid"
