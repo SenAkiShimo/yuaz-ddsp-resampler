@@ -40,4 +40,12 @@ export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
   --epochs "$EPOCHS" \
   --lr "$LR"
 
+MODEL="$ROOT/high-detail-tf-output/high_detail_tf.pt"
+if [ -f "$MODEL" ]; then
+  STATE="$VOICEBANK/.yuaz-0.2.8ai14"
+  mkdir -p "$STATE"
+  cp "$MODEL" "$STATE/high_detail_tf.pt"
+  echo "Installed TF model: $STATE/high_detail_tf.pt"
+fi
+
 open "$ROOT/high-detail-tf-output/examples" 2>/dev/null || true
