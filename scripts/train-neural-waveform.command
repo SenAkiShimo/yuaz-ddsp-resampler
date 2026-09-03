@@ -15,7 +15,30 @@ VOICEBANK="${VOICEBANK#\"}"; VOICEBANK="${VOICEBANK%\"}"
 [ -d "$VOICEBANK" ] || { echo "Voicebank folder not found: $VOICEBANK"; exit 1; }
 
 export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
+
+MANIFEST="$("$ROOT/.venv/bin/python" - "$VOICEBANK" <<'PY'
+import sys
+from pathlib import Path
+from yuaz_ddsp_resampler.state import resolve_ai_state
+
+bank = Path(sys.argv[1]).expanduser().resolve()
+state, info = resolve_ai_state(bank, verify=True)
+if state is None:
+    raise SystemExit(
+        "No valid .yuaz-0.2.8ai14 generation found for this voicebank. "
+        "v0.3.0 neural waveform training requires the existing ai.14 analysis state."
+    )
+manifest = Path(state) / "manifest.json"
+if not manifest.is_file():
+    raise SystemExit(f"Active ai.14 generation has no manifest: {manifest}")
+print(manifest)
+PY
+)"
+
+echo "Using ai.14 manifest: $MANIFEST"
+
 exec "$ROOT/.venv/bin/python" -m yuaz_ddsp_resampler.train_neural_waveform \
   --project-root "$ROOT" \
   --voicebank "$VOICEBANK" \
+  --manifest "$MANIFEST" \
   "${@:2}"
