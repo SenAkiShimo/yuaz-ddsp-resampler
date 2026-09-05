@@ -14,19 +14,23 @@ VOICEBANK="${VOICEBANK#\'}"; VOICEBANK="${VOICEBANK%\'}"
 VOICEBANK="${VOICEBANK#\"}"; VOICEBANK="${VOICEBANK%\"}"
 [ -d "$VOICEBANK" ] || { echo "Voicebank folder not found: $VOICEBANK"; exit 1; }
 
-BEST_CONDITIONED="$ROOT/control_models/neural-waveform-v0.3.0-conditioned-multipitch-best.pt"
-FINAL_CONDITIONED="$ROOT/control_models/neural-waveform-v0.3.0-conditioned.pt"
-BEST_LEGACY="$ROOT/control_models/neural-waveform-v0.3.0-multipitch-best.pt"
-FINAL_LEGACY="$ROOT/control_models/neural-waveform-v0.3.0.pt"
-if [ -f "$BEST_CONDITIONED" ]; then
-  CHECKPOINT="$BEST_CONDITIONED"
-elif [ -f "$FINAL_CONDITIONED" ]; then
-  CHECKPOINT="$FINAL_CONDITIONED"
-elif [ -f "$BEST_LEGACY" ]; then
-  CHECKPOINT="$BEST_LEGACY"
-else
-  CHECKPOINT="$FINAL_LEGACY"
-fi
+CANDIDATES=(
+  "$ROOT/control_models/neural-waveform-v0.3.0-conditioned-v3-pareto-best.pt"
+  "$ROOT/control_models/neural-waveform-v0.3.0-conditioned-v3-multipitch-best.pt"
+  "$ROOT/control_models/neural-waveform-v0.3.0-conditioned-v3.pt"
+  "$ROOT/control_models/neural-waveform-v0.3.0-conditioned-multipitch-best.pt"
+  "$ROOT/control_models/neural-waveform-v0.3.0-conditioned.pt"
+  "$ROOT/control_models/neural-waveform-v0.3.0-multipitch-best.pt"
+  "$ROOT/control_models/neural-waveform-v0.3.0.pt"
+)
+CHECKPOINT=""
+for CANDIDATE in "${CANDIDATES[@]}"; do
+  if [ -f "$CANDIDATE" ]; then
+    CHECKPOINT="$CANDIDATE"
+    break
+  fi
+done
+[ -n "$CHECKPOINT" ] || { echo "No neural waveform checkpoint found."; exit 1; }
 
 export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 echo "A/B checkpoint: $CHECKPOINT"
