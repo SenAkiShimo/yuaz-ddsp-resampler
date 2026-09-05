@@ -35,10 +35,13 @@ print(manifest)
 PY
 )"
 
+OUTPUT="$ROOT/control_models/neural-waveform-v0.3.0-conditioned.pt"
 echo "Using ai.14 manifest: $MANIFEST"
+echo "Saving conditioned v2 checkpoints under: $OUTPUT"
 
 exec "$ROOT/.venv/bin/python" -m yuaz_ddsp_resampler.train_neural_waveform \
   --project-root "$ROOT" \
   --voicebank "$VOICEBANK" \
   --manifest "$MANIFEST" \
+  --output "$OUTPUT" \
   "${@:2}"
