@@ -21,6 +21,7 @@ from .train_neural_waveform import (
     read_fullband_target,
     resolve_manifest,
 )
+from .train_neural_waveform_v3 import prepare_condition_v3
 
 
 def safe_name(text):
@@ -49,16 +50,31 @@ def choose_pairs(val_pairs):
     return chosen
 
 
-def render_pair(engine, model, pair, out_dir, prefix):
+def conditioning_function(metadata):
+    return prepare_condition_v3 if metadata.get("trainer_generation") == "conditioned-v3" else prepare_condition
+
+
+def render_pair(engine, model, pair, out_dir, prefix, prepare_fn):
     source = load_cache(pair["source"]["_cache"], engine.device)
     target_cache = load_cache(pair["target"]["_cache"], engine.device)
-    conditioning, structure = prepare_condition(
-        engine,
-        source,
-        pair["source"],
-        target_cache["f0"],
-        stable_seed(pair["alias"], pair["semitones"], "ab-export"),
-    )
+    if prepare_fn is prepare_condition_v3:
+        conditioning, structure, raw_structure = prepare_fn(
+            engine,
+            source,
+            pair["source"],
+            target_cache["f0"],
+            stable_seed(pair["alias"], pair["semitones"], "ab-export-v3"),
+            return_raw=True,
+        )
+    else:
+        conditioning, structure = prepare_fn(
+            engine,
+            source,
+            pair["source"],
+            target_cache["f0"],
+            stable_seed(pair["alias"], pair["semitones"], "ab-export"),
+        )
+        raw_structure = structure
     with __import__("torch").inference_mode():
         neural = model(conditioning, structure)
     target = read_fullband_target(
@@ -71,7 +87,9 @@ def render_pair(engine, model, pair, out_dir, prefix):
     base = out_dir / prefix
     write_audio(base.with_name(base.name + "__source-original.wav"), source_original)
     write_audio(base.with_name(base.name + "__target-original.wav"), target)
-    write_audio(base.with_name(base.name + "__ddsp-48k.wav"), structure)
+    write_audio(base.with_name(base.name + "__ddsp-raw-48k.wav"), raw_structure)
+    if prepare_fn is prepare_condition_v3:
+        write_audio(base.with_name(base.name + "__ddsp-structure-48k.wav"), structure)
     write_audio(base.with_name(base.name + "__neural-48k.wav"), neural)
     return {
         "alias": pair["alias"],
@@ -83,21 +101,34 @@ def render_pair(engine, model, pair, out_dir, prefix):
     }
 
 
-def render_native(engine, model, item, out_dir, prefix):
+def render_native(engine, model, item, out_dir, prefix, prepare_fn):
     sample = load_cache(item["_cache"], engine.device)
-    conditioning, structure = prepare_condition(
-        engine,
-        sample,
-        item,
-        sample["f0"],
-        stable_seed(str(item["_cache"]), "ab-native"),
-    )
+    if prepare_fn is prepare_condition_v3:
+        conditioning, structure, raw_structure = prepare_fn(
+            engine,
+            sample,
+            item,
+            sample["f0"],
+            stable_seed(str(item["_cache"]), "ab-native-v3"),
+            return_raw=True,
+        )
+    else:
+        conditioning, structure = prepare_fn(
+            engine,
+            sample,
+            item,
+            sample["f0"],
+            stable_seed(str(item["_cache"]), "ab-native"),
+        )
+        raw_structure = structure
     with __import__("torch").inference_mode():
         neural = model(conditioning, structure)
     target = read_fullband_target(item["voicebank_root"], item, neural.shape[-1])
     base = out_dir / prefix
     write_audio(base.with_name(base.name + "__target-original.wav"), target)
-    write_audio(base.with_name(base.name + "__ddsp-48k.wav"), structure)
+    write_audio(base.with_name(base.name + "__ddsp-raw-48k.wav"), raw_structure)
+    if prepare_fn is prepare_condition_v3:
+        write_audio(base.with_name(base.name + "__ddsp-structure-48k.wav"), structure)
     write_audio(base.with_name(base.name + "__neural-48k.wav"), neural)
     return {
         "alias": item["_alias"],
@@ -127,9 +158,16 @@ def main():
     if args.checkpoint:
         checkpoint = Path(args.checkpoint).expanduser().resolve()
     else:
-        best = root / "control_models" / "neural-waveform-v0.3.0-multipitch-best.pt"
-        final = root / "control_models" / "neural-waveform-v0.3.0.pt"
-        checkpoint = best if best.is_file() else final
+        candidates = [
+            root / "control_models" / "neural-waveform-v0.3.0-conditioned-v3-pareto-best.pt",
+            root / "control_models" / "neural-waveform-v0.3.0-conditioned-v3-multipitch-best.pt",
+            root / "control_models" / "neural-waveform-v0.3.0-conditioned-v3.pt",
+            root / "control_models" / "neural-waveform-v0.3.0-conditioned-multipitch-best.pt",
+            root / "control_models" / "neural-waveform-v0.3.0-conditioned.pt",
+            root / "control_models" / "neural-waveform-v0.3.0-multipitch-best.pt",
+            root / "control_models" / "neural-waveform-v0.3.0.pt",
+        ]
+        checkpoint = next((p for p in candidates if p.is_file()), candidates[-1])
     if not checkpoint.is_file():
         raise RuntimeError(f"neural checkpoint not found: {checkpoint}")
 
@@ -145,6 +183,7 @@ def main():
         registry_path=config.get("registry_path"), ddsp_synthesis_sr=SAMPLE_RATE,
     )
     model, metadata = load_neural_waveform_decoder(checkpoint, device=engine.device)
+    prepare_fn = conditioning_function(metadata)
 
     entries = build_manifest_index(manifest, voicebank)
     _, val_items, val_aliases = alias_split(entries)
@@ -154,6 +193,7 @@ def main():
     report = {
         "checkpoint": str(checkpoint),
         "checkpoint_role": metadata.get("checkpoint_role"),
+        "trainer_generation": metadata.get("trainer_generation"),
         "manifest": str(manifest),
         "held_out_aliases": len(val_aliases),
         "validation_pair_counts": pair_counts,
@@ -162,18 +202,15 @@ def main():
 
     for idx, item in enumerate(val_items[: max(0, int(args.native_count))], 1):
         prefix = f"native-{idx:02d}__{safe_name(item['_alias'])}"
-        report["exports"].append(render_native(engine, model, item, out_dir, prefix))
+        report["exports"].append(render_native(engine, model, item, out_dir, prefix, prepare_fn))
         print(f"exported native: {prefix}")
 
     for name, _, _ in PITCH_BUCKETS:
         pair = selected.get(name)
         if pair is None:
             continue
-        prefix = (
-            f"{name}__{pair['semitones']:.1f}st__"
-            f"{safe_name(pair['alias'])}"
-        )
-        report["exports"].append(render_pair(engine, model, pair, out_dir, prefix))
+        prefix = f"{name}__{pair['semitones']:.1f}st__{safe_name(pair['alias'])}"
+        report["exports"].append(render_pair(engine, model, pair, out_dir, prefix, prepare_fn))
         print(f"exported {name}: {prefix}")
 
     (out_dir / "report.json").write_text(
@@ -181,6 +218,7 @@ def main():
     )
     print(f"A/B export complete: {out_dir}")
     print(f"checkpoint: {checkpoint}")
+    print(f"trainer generation: {metadata.get('trainer_generation') or 'legacy'}")
 
 
 if __name__ == "__main__":
