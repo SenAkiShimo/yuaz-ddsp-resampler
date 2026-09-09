@@ -103,7 +103,7 @@ require('smooth_lowpass_structure' in runtime_text, 'v3 runtime structure low-pa
 require('build_neural_conditioning' in runtime_text, 'v3 runtime conditioning builder')
 require('State.neural_route = NeuralWaveformRuntimeRoute' in server, 'server neural runtime initialization')
 require('State.neural_route.select_record' in server, 'server per-input neural route selection')
-require('neural_waveform_used' in server, 'server neural render diagnostics')
+require('response.update(State.neural_route.stats())' in server, 'server neural render diagnostics')
 require('conditioning_function' in exporter_text, 'A/B generation-aware conditioning')
 require('__ddsp-raw-48k.wav' in exporter_text, 'A/B raw DDSP output')
 require('__ddsp-structure-48k.wav' in exporter_text, 'A/B filtered DDSP structure output')
