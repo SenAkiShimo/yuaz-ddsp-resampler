@@ -51,7 +51,9 @@ def _state_error_allows_base_fallback(exc):
 _state.resolve_active_state = _resolve_active_state_readonly_ai14
 _state.lookup_local_record = _lookup_local_record_runtime_compatible
 
+from . import core as _core
 from .core import YuazDDSPResamplerEngine
+from .neural_runtime import NeuralWaveformRuntimeRoute
 from .state import atomic_write_json
 
 ENGINE_VERSION = "0.3.0"
@@ -59,6 +61,7 @@ ENGINE_VERSION = "0.3.0"
 
 class State:
     engine = None
+    neural_route = None
     ready = False
     error = None
     runtime_id = None
@@ -79,6 +82,7 @@ class Handler(socketserver.StreamRequestHandler):
                     "engine_version": ENGINE_VERSION, "runtime_id": State.runtime_id,
                     "runtime_root": str(State.runtime_root), "pid": os.getpid(),
                     "active_renders": State.active_renders,
+                    "neural_waveform": State.neural_route.describe() if State.neural_route else {"loaded": False},
                 }
             elif not State.ready:
                 response = {"ok": False, "ready": False, "error": State.error or "engine loading"}
@@ -89,6 +93,8 @@ class Handler(socketserver.StreamRequestHandler):
                     State.active_renders += 1
                 try:
                     response = State.engine.render(request["request"])
+                    if State.neural_route is not None and isinstance(response, dict):
+                        response.update(State.neural_route.stats())
                     self._log_request(request["request"], response)
                 finally:
                     with State.active_lock:
@@ -158,19 +164,30 @@ def main():
                     ai13_upperband_head_start_hz=config.get("ai13_upperband_head_start_hz", 8200.0),
                     ai13_upperband_head_full_hz=config.get("ai13_upperband_head_full_hz", 13800.0),
                 )
+                State.neural_route = NeuralWaveformRuntimeRoute(root, config, device=State.engine.device)
+                State.neural_route.install_patch(_core)
                 original_models_for_input = State.engine._models_for_input
 
                 def models_for_input_runtime_compatible(path):
                     try:
-                        return original_models_for_input(path)
+                        result = original_models_for_input(path)
                     except RuntimeError as exc:
                         if _state_error_allows_base_fallback(exc):
-                            return None, None, [], None
-                        raise
+                            result = (None, None, [], None)
+                        else:
+                            raise
+                    State.neural_route.select_record(result[3])
+                    return result
 
                 State.engine._models_for_input = models_for_input_runtime_compatible
                 State.ready = True
-                print(f"READY {ENGINE_VERSION} {State.runtime_id} {root}", flush=True)
+                neural_info = State.neural_route.describe()
+                print(
+                    f"READY {ENGINE_VERSION} {State.runtime_id} {root} "
+                    f"neural_loaded={neural_info.get('loaded')} "
+                    f"neural_checkpoint={neural_info.get('checkpoint')}",
+                    flush=True,
+                )
             except Exception as exc:
                 State.error = str(exc)
                 print(f"LOAD ERROR: {exc}", flush=True)
