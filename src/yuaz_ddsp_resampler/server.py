@@ -52,11 +52,33 @@ _state.resolve_active_state = _resolve_active_state_readonly_ai14
 _state.lookup_local_record = _lookup_local_record_runtime_compatible
 
 from . import core as _core
+from .articulation_v2 import single_source_articulation_hybrid_v2
 from .core import YuazDDSPResamplerEngine
 from .neural_runtime import NeuralWaveformRuntimeRoute
 from .state import atomic_write_json
 
 ENGINE_VERSION = "0.3.0"
+
+
+def _install_articulation_v2_patch():
+    """Route only the v0.3 runtime articulation bridge through articulation v2."""
+    def articulation_hybrid_mix_v2(
+        original, generated, sr, source_f0, target_f0, regions,
+        source_fixed_ms, target_fixed_ms, target_ms, canonical_template=None,
+    ):
+        mixed, stats = single_source_articulation_hybrid_v2(
+            original,
+            generated,
+            sr,
+            regions,
+            source_fixed_ms,
+            target_fixed_ms,
+            target_ms,
+            canonical_template=canonical_template,
+        )
+        return mixed, stats
+
+    _core.articulation_hybrid_mix = articulation_hybrid_mix_v2
 
 
 class State:
@@ -164,6 +186,7 @@ def main():
                     ai13_upperband_head_start_hz=config.get("ai13_upperband_head_start_hz", 8200.0),
                     ai13_upperband_head_full_hz=config.get("ai13_upperband_head_full_hz", 13800.0),
                 )
+                _install_articulation_v2_patch()
                 State.neural_route = NeuralWaveformRuntimeRoute(root, config, device=State.engine.device)
                 State.neural_route.install_patch(_core)
                 original_models_for_input = State.engine._models_for_input
@@ -184,6 +207,7 @@ def main():
                 neural_info = State.neural_route.describe()
                 print(
                     f"READY {ENGINE_VERSION} {State.runtime_id} {root} "
+                    f"articulation=v2 "
                     f"neural_loaded={neural_info.get('loaded')} "
                     f"neural_checkpoint={neural_info.get('checkpoint')}",
                     flush=True,
