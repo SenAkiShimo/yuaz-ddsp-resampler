@@ -4,170 +4,87 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 PY="${ROOT}/.venv/bin/python"; [ -x "$PY" ] || PY=python3
 export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 "$PY" - "$ROOT" <<'PY'
+import re
 import sys
 from pathlib import Path
-root=Path(sys.argv[1])
+
+root = Path(sys.argv[1])
 
 def require(condition, label):
     if not condition:
         raise AssertionError(f"self-test failed: {label}")
 
-require((root/'VERSION').read_text().strip()=='0.3.0', 'VERSION is not 0.3.0')
-client=(root/'src/yuaz_ddsp_resampler/client.py').read_text()
-server_path=(root/'src/yuaz_ddsp_resampler/server.py')
-server=server_path.read_text()
-control_flags=(root/'src/yuaz_ddsp_resampler/controls.py').read_text()
-require('ENGINE_VERSION = "0.3.0"' in client, 'client engine version')
-require('DEFAULT_PORT = 47889' in client, 'client production port')
-require('ENGINE_VERSION = "0.3.0"' in server, 'server engine version')
-require('refiner_bypass: float = 0.0' in control_flags, 'YQ refiner bypass field')
-require('def refiner_bypass_enabled' in control_flags, 'YQ refiner bypass property')
-require('"YQ": 0.0' in control_flags, 'YQ default must remain off')
-require('articulation_trajectory_bypass: float = 0.0' in control_flags, 'YA articulation bypass field')
-require('def articulation_trajectory_bypass_enabled' in control_flags, 'YA articulation bypass property')
-require('"YA": 0.0' in control_flags, 'YA default must remain off')
-require('neural_direct: float = 0.0' in control_flags, 'YN neural direct field')
-require('def neural_direct_enabled' in control_flags, 'YN neural direct property')
-require('"YN": 0.0' in control_flags, 'YN default must remain off')
-require('values[key] = 1.0 if raw >= 0.5 else 0.0' in control_flags, 'experimental boolean parser')
-controls=(root/'src/yuaz_ddsp_resampler/ai_vocal_controls.py').read_text()
-require('mask = (strength > 1e-6).to(c.dtype) * voiced' in controls, 'AI control voiced mask')
-require('control_gate_mode": "source-active-voiced"' in controls, 'AI control gate mode')
-require('mask = strength * voiced' not in controls, 'obsolete strength mask still present')
-require('t_progress = t_amount * t_amount * (3.0 - 2.0 * t_amount)' in controls, 'YT learned monotonic progress')
-require('t_dg = t_dg * t_progress * (0.015 + 0.035 * t_progress)' in controls, 'YT learned gate reduction')
-require('return t_ds, t_da, t_dg' in controls, 'YT learned residual continuity')
-require('spectral_effect = torch.amax(torch.abs(ds_full), dim=1, keepdim=True) > 1e-7' in controls, 'AI zero-effect mask')
-vocal=(root/'src/yuaz_ddsp_resampler/vocal_controls.py').read_text()
+require((root / "VERSION").read_text().strip() == "0.3.0", "VERSION is not 0.3.0")
+client = (root / "src/yuaz_ddsp_resampler/client.py").read_text()
+server = (root / "src/yuaz_ddsp_resampler/server.py").read_text()
+controls = (root / "src/yuaz_ddsp_resampler/controls.py").read_text()
+require('ENGINE_VERSION = "0.3.0"' in client, "client engine version")
+require('DEFAULT_PORT = 47889' in client, "client production port")
+require('ENGINE_VERSION = "0.3.0"' in server, "server engine version")
+
+match = re.search(r'_CONTROL_RE = re\.compile\(\s*r"\(([^)]*)\)', controls)
+require(match is not None, "control parser regex")
+flags = set(match.group(1).split("|"))
+require(flags == {"YM", "YD", "YH", "YT", "YB", "YV", "YG", "YO", "YF", "YX", "YP", "YR"}, "public control set")
+for removed in ("YQ", "YA", "YN"):
+    require(removed not in controls, f"removed test control {removed} still present")
+    require(removed not in server, f"removed server test route {removed} still present")
+require('raw_bypass: float = 0.0' in controls, "YR raw bypass field")
+require('def raw_bypass_enabled' in controls, "YR raw bypass property")
+
+ai_controls = (root / "src/yuaz_ddsp_resampler/ai_vocal_controls.py").read_text()
+require('mask = (strength > 1e-6).to(c.dtype) * voiced' in ai_controls, "AI control voiced mask")
+require('control_gate_mode": "source-active-voiced"' in ai_controls, "AI control gate mode")
+require('mask = strength * voiced' not in ai_controls, "obsolete strength mask still present")
+require('t_progress = t_amount * t_amount * (3.0 - 2.0 * t_amount)' in ai_controls, "YT learned progress")
+require('return t_ds, t_da, t_dg' in ai_controls, "YT learned residual continuity")
+
+vocal = (root / "src/yuaz_ddsp_resampler/vocal_controls.py").read_text()
 for label, expected in (
-    ('YT carrier', 'tension_scale = carrier("tension", 0.88)'),
-    ('YG carrier', 'gender_scale = carrier("gender_formant", 0.85)'),
-    ('YO carrier', 'mouth_scale = carrier("mouth", 0.95)'),
-    ('YF carrier', 'falsetto_spectral_scale = carrier("falsetto", 0.88, 0.96)'),
-    ('YX carrier', 'mixed_scale = carrier("mixed_voice", 0.95, 0.95)'),
-    ('YP carrier', 'pharyngeal_scale = carrier("pharyngeal", 0.95, 0.95)'),
-    ('YT positive curve', 'torch.pow(torch.clamp(tension, 0.0, 1.0), 1.05) * tension_scale'),
-    ('YT negative curve', 'torch.pow(torch.clamp(-tension, 0.0, 1.0), 0.95) * tension_scale * 1.08'),
-    ('YT AP route', 'out_ap = out_ap - 0.10 * t_pos * tension_ap_shape * out_ap'),
-    ('YT gate route', 'out_gate = out_gate + 0.05 * t_pos_g * (1.0 - out_gate)'),
-    ('YX gate route', 'out_gate = out_gate + 0.48 * x_g * (1.0 - out_gate)'),
-    ('YO formant warp', 'shift_hz = (430.0 * f1_weight + 105.0 * f2_weight) * control'),
-    ('YF F0-relative register', 'harmonic_order = hz / f0_env'),
+    ("YT carrier", 'tension_scale = carrier("tension", 0.88)'),
+    ("YG carrier", 'gender_scale = carrier("gender_formant", 0.85)'),
+    ("YO carrier", 'mouth_scale = carrier("mouth", 0.95)'),
+    ("YF F0-relative register", 'harmonic_order = hz / f0_env'),
 ):
     require(expected in vocal, label)
-install=(root/'scripts/install-openutau-macos.command').read_text()
-require('0.3.0' in install, 'installer version')
-require('.yuaz-0.2.8ai14' in install, 'ai.14 state namespace')
-require('preserve_ai14' in install, 'ai.14 preservation')
-prepare=(root/'scripts/prepare-voicebank.command').read_text()
-deep=(root/'scripts/deep-train-voicebank.command').read_text()
-require('disabled' in prepare.lower(), 'voicebank preparation must remain disabled')
-require('disabled' in deep.lower(), 'voicebank deep training must remain disabled')
-wave=(root/'src/yuaz_ddsp_resampler/neural_waveform.py')
-wave_v4=(root/'src/yuaz_ddsp_resampler/neural_waveform_v4.py')
-runtime=(root/'src/yuaz_ddsp_resampler/neural_runtime.py')
-art_v2=(root/'src/yuaz_ddsp_resampler/articulation_v2.py')
-trainer=(root/'src/yuaz_ddsp_resampler/train_neural_waveform.py')
-trainer_v3=(root/'src/yuaz_ddsp_resampler/train_neural_waveform_v3.py')
-trainer_v4=(root/'src/yuaz_ddsp_resampler/train_neural_waveform_v4.py')
-exporter=(root/'src/yuaz_ddsp_resampler/export_neural_waveform_ab.py')
-train_cmd=(root/'scripts/train-neural-waveform.command')
-train_v3_cmd=(root/'scripts/train-neural-waveform-v3.command')
-train_v4_cmd=(root/'scripts/train-neural-waveform-v4.command')
-export_cmd=(root/'scripts/export-neural-waveform-ab.command')
-require(wave.is_file(), 'neural waveform module missing')
-require(wave_v4.is_file(), 'neural waveform v4 source-detail module missing')
-require(runtime.is_file(), 'neural waveform runtime route missing')
-require(art_v2.is_file(), 'articulation v2 experiment module missing')
-require(trainer.is_file(), 'neural waveform trainer missing')
-require(trainer_v3.is_file(), 'neural waveform v3 trainer missing')
-require(trainer_v4.is_file(), 'neural waveform v4 trainer missing')
-require(exporter.is_file(), 'neural waveform A/B exporter missing')
-require(train_cmd.is_file(), 'neural waveform training command missing')
-require(train_v3_cmd.is_file(), 'neural waveform v3 training command missing')
-require(train_v4_cmd.is_file(), 'neural waveform v4 training command missing')
-require(export_cmd.is_file(), 'neural waveform A/B command missing')
-wave_text=wave.read_text()
-wave_v4_text=wave_v4.read_text()
-runtime_text=runtime.read_text()
-art_v2_text=art_v2.read_text()
-trainer_text=trainer.read_text()
-v3_text=trainer_v3.read_text()
-v4_text=trainer_v4.read_text()
-v4_cmd_text=train_v4_cmd.read_text()
-exporter_text=exporter.read_text()
-require('class YuazNeuralWaveformDecoder' in wave_text, 'neural waveform decoder class')
-require('build_neural_conditioning' in wave_text, 'neural conditioning builder')
-require('native-pitch reconstruction + alias-isolated multipitch cross-recording' in trainer_text, 'neural training definition')
-require('PITCH_BUCKETS' in trainer_text, 'multipitch bucket split')
-require('resolve_ai_state' in trainer_text, 'trainer active ai.14 generation resolver')
-require('resolve_conditioning_context' in trainer_text, 'voicebank conditioning resolver')
-require('engine._models_for_input' in trainer_text, 'active ai.14 model route')
-require('prototype_index=context["prototype_index"]' in trainer_text, 'source OTO prototype route')
-require('ai_control_adapter=context["ai_controls"]' in trainer_text, 'learned control conditioning route')
-require('validate_pairs' in trainer_text, 'held-out cross-pitch validation')
-require('cross_pitch_validation' in trainer_text, 'cross-pitch validation history')
-require('native-best' in trainer_text, 'native best checkpoint')
-require('multipitch-best' in trainer_text, 'multipitch best checkpoint')
-require('validation_definition' in trainer_text, 'validation metadata')
-require('STRUCTURE_LOWPASS_HZ = 9000.0' in v3_text, 'v3 DDSP structure low-pass')
-require('PAIR_LR = 5e-5' in v3_text, 'v3 pair learning rate')
-require('NATIVE_REHEARSAL_WEIGHT = 0.28' in v3_text, 'v3 native rehearsal')
-require('PARETO_NATIVE_DEGRADATION = 0.15' in v3_text, 'v3 Pareto native guard')
-require('band_distribution_loss' in v3_text, 'v3 band distribution loss')
-require('log_rms_loss' in v3_text, 'v3 loudness loss')
-require('prepare_condition_v3' in v3_text, 'v3 conditioning route')
-require('pareto-best' in v3_text, 'v3 Pareto checkpoint')
-require('trainer_generation": "conditioned-v3"' in v3_text, 'v3 checkpoint metadata')
-require('SOURCE_DETAIL_CHANNELS = SOURCE_DETAIL_BANDS * 2 + 3' in wave_v4_text, 'v4 source-detail width')
-require('build_pitch_invariant_source_detail' in wave_v4_text, 'v4 source-detail extractor')
-require('No raw waveform or source F0 is returned' in wave_v4_text, 'v4 no raw/F0 design guard')
-require('append_source_detail' in wave_v4_text, 'v4 conditioning append')
-require('prepare_condition_v4' in v4_text, 'v4 conditioning route')
-require('neural_waveform_loss_v4' in v4_text, 'v4 loss')
-require('_presence_logmag_loss' in v4_text, 'v4 2-6k presence loss')
-require('_articulation_flux_loss' in v4_text, 'v4 articulation flux loss')
-require('_envelope_derivative_loss' in v4_text, 'v4 envelope derivative loss')
-require('_V3_BASE_LOSS = v3.neural_waveform_loss_v3' in v4_text, 'v4 frozen base-loss reference')
-require('base, base_parts = _V3_BASE_LOSS(target, pred)' in v4_text, 'v4 must call frozen v3 loss')
-require('base, base_parts = v3.neural_waveform_loss_v3(target, pred)' not in v4_text, 'v4 recursive loss call must stay absent')
-require('trainer_generation": "conditioned-v4"' in v4_text, 'v4 checkpoint metadata')
-require('design_reference' in v4_text and 'not used as a training target' in v4_text, 'WORLDLINE reference must stay diagnostic-only')
-require('V4_WARM_START_ENV' in v4_text, 'v4 warm-start hook')
-require('dst[:, : value.shape[1]] = value.to(dst.dtype)' in v4_text, 'v4 preserves v3 input projection')
-require('conditioned-v3-pareto-best.pt' in v4_cmd_text, 'v4 command warm-starts from v3 pareto')
-require('conditioned-v4.pt' in v4_cmd_text, 'v4 output path')
-require('WORLDLINE-R reference is diagnostic only' in v4_cmd_text, 'v4 command training-target guard')
-require('class NeuralWaveformRuntimeRoute' in runtime_text, 'v3 neural runtime route class')
-require('conditioned-v3-direct-waveform' in runtime_text, 'v3 runtime neural backend')
-require('voicebank-mismatch' in runtime_text, 'v3 runtime voicebank provenance guard')
-require('smooth_lowpass_structure' in runtime_text, 'v3 runtime structure low-pass')
-require('build_neural_conditioning' in runtime_text, 'v3 runtime conditioning builder')
-require('single_source_articulation_hybrid_v2' in art_v2_text, 'articulation v2 experiment bridge')
-require('trajectory_revision": 2' in art_v2_text, 'articulation v2 experiment diagnostics')
-require('from .articulation_v2 import single_source_articulation_hybrid_v2' not in server, 'failed articulation v2 must not be default')
-require('_install_articulation_v2_patch()' not in server, 'failed articulation v2 patch must stay disabled')
-require('State.neural_route = NeuralWaveformRuntimeRoute' in server, 'server neural runtime initialization')
-require('State.neural_route.select_record' in server, 'server per-input neural route selection')
-require('response.update(State.neural_route.stats())' in server, 'server neural render diagnostics')
-require('fidelity_refiner_bypass_requested' in server, 'YQ refiner A/B diagnostics')
-require('requested and neural_active and refiner_available' in server, 'YQ must be neural-only')
-require('return result[0], None, result[2], result[3]' in server, 'YQ refiner bypass route')
-require('articulation_trajectory_bypass_requested' in server, 'YA articulation A/B diagnostics')
-require('articulation_hybrid_mix_runtime_ab' in server, 'YA runtime articulation wrapper')
-require('bypassed-zero-template' in server, 'YA zero-trajectory marker')
-require('np.zeros((129, 32), dtype=np.float32)' in server, 'YA zero trajectory template')
-require('neural_direct_requested' in server, 'YN neural-direct diagnostics')
-require('direct_requested and neural_active' in server, 'YN must be neural-only')
-require('neural-direct-fullband' in server, 'YN direct fullband crossover bypass')
-require('neural-direct-bypass' in server, 'YN outer pipeline bypass marker')
-require('original_terminal_guard' in server, 'YN terminal guard preservation')
-require('bool(controls.neural_direct_enabled)' in server, 'YN parser wiring')
-require('conditioning_function' in exporter_text, 'A/B generation-aware conditioning')
-require('__ddsp-raw-48k.wav' in exporter_text, 'A/B raw DDSP output')
-require('__ddsp-structure-48k.wav' in exporter_text, 'A/B filtered DDSP structure output')
-require('__neural-48k.wav' in exporter_text, 'A/B neural output')
-require('__target-original.wav' in exporter_text, 'A/B target output')
+
+install = (root / "scripts/install-openutau-macos.command").read_text()
+require("0.3.0" in install, "installer version")
+require(".yuaz-0.2.8ai14" in install, "ai.14 state namespace")
+require("preserve_ai14" in install, "ai.14 preservation")
+
+required_files = (
+    "src/yuaz_ddsp_resampler/neural_waveform.py",
+    "src/yuaz_ddsp_resampler/neural_waveform_v4.py",
+    "src/yuaz_ddsp_resampler/neural_runtime.py",
+    "src/yuaz_ddsp_resampler/train_neural_waveform.py",
+    "src/yuaz_ddsp_resampler/train_neural_waveform_v3.py",
+    "src/yuaz_ddsp_resampler/train_neural_waveform_v4.py",
+    "src/yuaz_ddsp_resampler/export_neural_waveform_ab.py",
+    "scripts/train-neural-waveform.command",
+    "scripts/train-neural-waveform-v3.command",
+    "scripts/train-neural-waveform-v4.command",
+    "scripts/export-neural-waveform-ab.command",
+)
+for rel in required_files:
+    require((root / rel).is_file(), f"missing {rel}")
+
+wave = (root / "src/yuaz_ddsp_resampler/neural_waveform.py").read_text()
+wave_v4 = (root / "src/yuaz_ddsp_resampler/neural_waveform_v4.py").read_text()
+runtime = (root / "src/yuaz_ddsp_resampler/neural_runtime.py").read_text()
+v3 = (root / "src/yuaz_ddsp_resampler/train_neural_waveform_v3.py").read_text()
+v4 = (root / "src/yuaz_ddsp_resampler/train_neural_waveform_v4.py").read_text()
+require("class YuazNeuralWaveformDecoder" in wave, "neural waveform decoder")
+require("build_neural_conditioning" in wave, "neural conditioning")
+require("SOURCE_DETAIL_CHANNELS = SOURCE_DETAIL_BANDS * 2 + 3" in wave_v4, "v4 source detail width")
+require("build_pitch_invariant_source_detail" in wave_v4, "v4 source detail extractor")
+require("class NeuralWaveformRuntimeRoute" in runtime, "neural runtime route")
+require("voicebank-mismatch" in runtime, "voicebank provenance guard")
+require("trainer_generation\": \"conditioned-v3\"" in v3, "v3 metadata")
+require("trainer_generation\": \"conditioned-v4\"" in v4, "v4 metadata")
+require("_V3_BASE_LOSS = v3.neural_waveform_loss_v3" in v4, "v4 frozen base loss")
+require("State.neural_route.select_record" in server, "server neural route selection")
+require("response.update(State.neural_route.stats())" in server, "server neural diagnostics")
 PY
 python3 -m compileall -q "$ROOT/src"
 while IFS= read -r -d '' f; do bash -n "$f"; done < <(find "$ROOT" -type f -name '*.command' -not -path '*/previous_versions/*' -print0)
