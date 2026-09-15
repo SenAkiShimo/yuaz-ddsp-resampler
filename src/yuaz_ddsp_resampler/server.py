@@ -7,6 +7,8 @@ import threading
 import traceback
 from pathlib import Path
 
+import numpy as np
+
 from . import state as _state
 
 _original_resolve_active_state = _state.resolve_active_state
@@ -70,6 +72,7 @@ class State:
     active_renders = 0
     active_lock = threading.Lock()
     refiner_ab = threading.local()
+    articulation_ab = threading.local()
 
 
 class Handler(socketserver.StreamRequestHandler):
@@ -95,6 +98,8 @@ class Handler(socketserver.StreamRequestHandler):
                 State.refiner_ab.requested = bool(controls.refiner_bypass_enabled)
                 State.refiner_ab.available = False
                 State.refiner_ab.bypassed = False
+                State.articulation_ab.requested = bool(controls.articulation_trajectory_bypass_enabled)
+                State.articulation_ab.bypassed = False
                 with State.active_lock:
                     State.active_renders += 1
                 try:
@@ -106,6 +111,8 @@ class Handler(socketserver.StreamRequestHandler):
                             "fidelity_refiner_bypass_requested": bool(getattr(State.refiner_ab, "requested", False)),
                             "fidelity_refiner_available": bool(getattr(State.refiner_ab, "available", False)),
                             "fidelity_refiner_bypassed": bool(getattr(State.refiner_ab, "bypassed", False)),
+                            "articulation_trajectory_bypass_requested": bool(getattr(State.articulation_ab, "requested", False)),
+                            "articulation_trajectory_bypassed": bool(getattr(State.articulation_ab, "bypassed", False)),
                         })
                     self._log_request(request["request"], response)
                 finally:
@@ -114,6 +121,8 @@ class Handler(socketserver.StreamRequestHandler):
                     State.refiner_ab.requested = False
                     State.refiner_ab.available = False
                     State.refiner_ab.bypassed = False
+                    State.articulation_ab.requested = False
+                    State.articulation_ab.bypassed = False
             elif action == "shutdown":
                 response = {"ok": True}
                 self.server.shutdown_requested = True
@@ -181,6 +190,41 @@ def main():
                 )
                 State.neural_route = NeuralWaveformRuntimeRoute(root, config, device=State.engine.device)
                 State.neural_route.install_patch(_core)
+
+                original_articulation_hybrid_mix = _core.articulation_hybrid_mix
+
+                def articulation_hybrid_mix_runtime_ab(
+                    original, generated, sr, source_f0, target_f0, regions,
+                    source_fixed_ms, target_fixed_ms, target_ms, canonical_template=None,
+                ):
+                    requested = bool(getattr(State.articulation_ab, "requested", False))
+                    if requested:
+                        # Zero trajectory preserves v1 timing/raw-prefix behavior while
+                        # removing canonical/local spectral trajectory shaping.
+                        canonical_template = {
+                            "trajectory": np.zeros((129, 32), dtype=np.float32),
+                            "energy_delta": np.zeros(32, dtype=np.float32),
+                            "n_fft": 256,
+                            "frames": 32,
+                            "coherence": 1.0,
+                            "source_count": 0,
+                        }
+                        State.articulation_ab.bypassed = True
+                    mixed, stats = original_articulation_hybrid_mix(
+                        original, generated, sr, source_f0, target_f0, regions,
+                        source_fixed_ms, target_fixed_ms, target_ms,
+                        canonical_template=canonical_template,
+                    )
+                    if requested and isinstance(stats, dict):
+                        stats = dict(stats)
+                        stats["trajectory_transfer_used"] = False
+                        stats["trajectory_source"] = "bypassed-zero-template"
+                        stats["trajectory_gain_rms_db"] = 0.0
+                        stats["trajectory_strength"] = 0.0
+                    return mixed, stats
+
+                _core.articulation_hybrid_mix = articulation_hybrid_mix_runtime_ab
+
                 original_models_for_input = State.engine._models_for_input
 
                 def models_for_input_runtime_compatible(path):
@@ -206,7 +250,7 @@ def main():
                 neural_info = State.neural_route.describe()
                 print(
                     f"READY {ENGINE_VERSION} {State.runtime_id} {root} "
-                    f"refiner_ab=YQ1 "
+                    f"refiner_ab=YQ1 articulation_trajectory_ab=YA1 "
                     f"neural_loaded={neural_info.get('loaded')} "
                     f"neural_checkpoint={neural_info.get('checkpoint')}",
                     flush=True,
