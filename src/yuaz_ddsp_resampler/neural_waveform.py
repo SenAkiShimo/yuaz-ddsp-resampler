@@ -47,7 +47,7 @@ def build_neural_conditioning(
     spectral_bands=DEFAULT_SPECTRAL_BANDS,
     ap_bands=DEFAULT_AP_BANDS,
 ):
-    """Build frame-rate conditioning without exposing raw voiced source waveform."""
+    """Build frame-rate decoder conditioning."""
     if f0.ndim == 2:
         f0 = f0.unsqueeze(1)
     frames = int(f0.shape[-1])
@@ -108,7 +108,7 @@ class ResidualDilatedBlock(nn.Module):
 
 
 class YuazNeuralWaveformDecoder(nn.Module):
-    """Small DDSP-conditioned direct waveform generator for the v0.3 branch."""
+    """DDSP-conditioned waveform decoder."""
 
     def __init__(
         self,
