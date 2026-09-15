@@ -1,13 +1,5 @@
 #!/usr/bin/env python3
-"""Pitch-decoupled source-detail conditioning for conditioned-v4.
-
-The v4 route deliberately does not expose raw voiced waveform samples to the
-neural decoder.  Instead it extracts a coarse, frequency-smoothed source
-spectral envelope plus temporal derivatives and broadband articulation cues.
-Cross-pitch pair training presents these source cues together with a different
-target F0, forcing the decoder to treat them as articulation/timbre evidence
-rather than as a source-pitch carrier.
-"""
+"""Source-detail conditioning for conditioned-v4."""
 
 import torch
 import torch.nn.functional as F
@@ -43,17 +35,9 @@ def build_pitch_invariant_source_detail(
     bands=SOURCE_DETAIL_BANDS,
     smooth_bins=SOURCE_DETAIL_SMOOTH_BINS,
 ):
-    """Return coarse pitch-decoupled source detail as [B, C, frames].
+    """Return pitch-decoupled source detail as [B, C, frames].
 
-    Features:
-      * 24-band frequency-smoothed log spectral envelope (per-frame normalized)
-      * temporal derivative of that envelope
-      * broadband log-energy trajectory
-      * broadband spectral-flux trajectory
-      * spectral-flatness / aperiodicity proxy
-
-    Frequency smoothing happens before band reduction so individual harmonic
-    teeth are strongly attenuated.  No raw waveform or source F0 is returned.
+    No raw waveform or source F0 is returned.
     """
     x = source_waveform
     if x.ndim == 2:
