@@ -2,15 +2,23 @@ import math
 import threading
 from pathlib import Path
 
+import librosa
 import numpy as np
+import soundfile as sf
 import torch
 
 from .neural_waveform import build_neural_conditioning, load_neural_waveform_decoder
+from .neural_waveform_v4 import (
+    SOURCE_DETAIL_CHANNELS,
+    append_source_detail,
+    build_pitch_invariant_source_detail,
+)
 
 
 SAMPLE_RATE = 48000
 STRUCTURE_LOWPASS_HZ = 9000.0
 STRUCTURE_TRANSITION_HZ = 1500.0
+SUPPORTED_GENERATIONS = {"conditioned-v3", "conditioned-v4"}
 
 
 def smooth_lowpass_structure(x, cutoff_hz=STRUCTURE_LOWPASS_HZ, transition_hz=STRUCTURE_TRANSITION_HZ):
@@ -42,19 +50,26 @@ class NeuralWaveformRuntimeRoute:
         self.checkpoint = self._resolve_checkpoint()
         self.model = None
         self.metadata = {}
+        self.generation = ""
         self.load_error = None
         if self.checkpoint is not None:
             try:
                 model, metadata = load_neural_waveform_decoder(self.checkpoint, device=self.device)
-                if str(metadata.get("trainer_generation") or "") != "conditioned-v3":
-                    raise RuntimeError("runtime neural waveform checkpoint is not a conditioned-v3 model")
+                generation = str(metadata.get("trainer_generation") or "")
+                if generation not in SUPPORTED_GENERATIONS:
+                    raise RuntimeError(
+                        f"runtime neural waveform checkpoint generation is unsupported: {generation or 'missing'}"
+                    )
                 self.model = model
                 self.metadata = dict(metadata or {})
+                self.generation = generation
             except Exception as exc:
                 self.load_error = str(exc)
                 self.model = None
                 self.metadata = {}
+                self.generation = ""
         self.select_record(None)
+        self.clear_request_context()
 
     def _resolve_checkpoint(self):
         if not bool(self.config.get("neural_waveform_enabled", True)):
@@ -66,7 +81,12 @@ class NeuralWaveformRuntimeRoute:
             if not p.is_absolute():
                 p = self.runtime_root / p
             candidates.append(p)
+        # v4 is preferred when a trained checkpoint is present.  If not, the
+        # frozen v3 runtime route remains the exact fallback.
         candidates.extend([
+            self.runtime_root / "control_models" / "neural-waveform-v0.3.0-conditioned-v4-pareto-best.pt",
+            self.runtime_root / "control_models" / "neural-waveform-v0.3.0-conditioned-v4-multipitch-best.pt",
+            self.runtime_root / "control_models" / "neural-waveform-v0.3.0-conditioned-v4.pt",
             self.runtime_root / "control_models" / "neural-waveform-v0.3.0-conditioned-v3-pareto-best.pt",
             self.runtime_root / "control_models" / "neural-waveform-v0.3.0-conditioned-v3-multipitch-best.pt",
             self.runtime_root / "control_models" / "neural-waveform-v0.3.0-conditioned-v3.pt",
@@ -93,6 +113,12 @@ class NeuralWaveformRuntimeRoute:
             return str(Path(str(value)).expanduser().resolve())
         except Exception:
             return str(value)
+
+    def set_request_context(self, request):
+        self.local.request = dict(request or {})
+
+    def clear_request_context(self):
+        self.local.request = {}
 
     def select_record(self, record):
         trained_voicebank = self._norm_path(self.metadata.get("voicebank"))
@@ -121,6 +147,7 @@ class NeuralWaveformRuntimeRoute:
             "neural_waveform_selection_reason": reason,
             "neural_waveform_checkpoint": str(self.checkpoint or ""),
             "neural_waveform_checkpoint_role": str(self.metadata.get("checkpoint_role") or ""),
+            "neural_waveform_generation": str(self.generation or ""),
         }
         return active
 
@@ -129,6 +156,32 @@ class NeuralWaveformRuntimeRoute:
 
     def stats(self):
         return dict(getattr(self.local, "last_stats", {}) or {})
+
+    def _source_detail_for_request(self, frames, core_module):
+        request = dict(getattr(self.local, "request", {}) or {})
+        input_path = request.get("input")
+        if not input_path:
+            raise RuntimeError("conditioned-v4 runtime is missing the source input path")
+        path = Path(str(input_path)).expanduser().resolve()
+        if not path.is_file():
+            raise RuntimeError(f"conditioned-v4 source input is unavailable: {path}")
+
+        audio, sr = sf.read(path, always_2d=False)
+        if getattr(audio, "ndim", 1) > 1:
+            audio = np.mean(audio, axis=1)
+        audio = np.nan_to_num(np.asarray(audio, dtype=np.float32))
+        audio = core_module.crop_oto(
+            audio,
+            int(sr),
+            float(request.get("offset", 0.0) or 0.0),
+            float(request.get("cutoff", 0.0) or 0.0),
+        )
+        if int(sr) != SAMPLE_RATE:
+            audio = librosa.resample(audio, orig_sr=int(sr), target_sr=SAMPLE_RATE).astype(np.float32)
+        if audio.size < 16:
+            raise RuntimeError("conditioned-v4 source crop is empty")
+        source = torch.from_numpy(audio).to(self.device).view(1, 1, -1)
+        return build_pitch_invariant_source_detail(source, int(frames))
 
     def install_patch(self, core_module):
         if self.original_decode is not None:
@@ -157,11 +210,11 @@ class NeuralWaveformRuntimeRoute:
 
             if int(synthesis_sample_rate) != SAMPLE_RATE:
                 raise RuntimeError(
-                    f"conditioned-v3 neural runtime requires {SAMPLE_RATE} Hz DDSP synthesis, "
+                    f"{route.generation or 'conditioned neural'} runtime requires {SAMPLE_RATE} Hz DDSP synthesis, "
                     f"got {int(synthesis_sample_rate)}"
                 )
             if detail is None:
-                raise RuntimeError("conditioned-v3 neural runtime requires warped detail conditioning")
+                raise RuntimeError(f"{route.generation or 'conditioned neural'} runtime requires warped detail conditioning")
 
             torch.manual_seed(int(seed))
             with torch.inference_mode():
@@ -179,6 +232,15 @@ class NeuralWaveformRuntimeRoute:
                 if legacy is None:
                     raise RuntimeError("neural runtime DDSP conditioning did not return legacy_wav")
                 conditioning = build_neural_conditioning(z, detail, f0, aux)
+                source_detail_channels = 0
+                if route.generation == "conditioned-v4":
+                    source_detail = route._source_detail_for_request(conditioning.shape[-1], core_module)
+                    conditioning = append_source_detail(conditioning, source_detail)
+                    source_detail_channels = int(source_detail.shape[1])
+                    if source_detail_channels != int(SOURCE_DETAIL_CHANNELS):
+                        raise RuntimeError(
+                            f"conditioned-v4 source-detail width mismatch: {source_detail_channels} != {SOURCE_DETAIL_CHANNELS}"
+                        )
                 if int(conditioning.shape[1]) != int(route.model.condition_channels):
                     raise RuntimeError(
                         "neural runtime conditioning width mismatch: "
@@ -195,14 +257,21 @@ class NeuralWaveformRuntimeRoute:
                 int(decoder.sample_rate),
                 legacy_samples,
             )
+            backend = (
+                "conditioned-v4-source-detail-waveform"
+                if route.generation == "conditioned-v4"
+                else "conditioned-v3-direct-waveform"
+            )
             full_stats = dict(aux.get("fullband_stats") or {})
             full_stats.update({
                 "neural_waveform_used": True,
-                "neural_waveform_backend": "conditioned-v3-direct-waveform",
+                "neural_waveform_backend": backend,
+                "neural_waveform_generation": str(route.generation or ""),
                 "neural_waveform_checkpoint": str(route.checkpoint),
                 "neural_waveform_checkpoint_role": str(route.metadata.get("checkpoint_role") or ""),
                 "neural_waveform_structure_lowpass_hz": STRUCTURE_LOWPASS_HZ,
                 "neural_waveform_structure_transition_hz": STRUCTURE_TRANSITION_HZ,
+                "neural_waveform_source_detail_channels": int(source_detail_channels),
             })
             route.local.last_stats = {
                 "neural_waveform_loaded": True,
@@ -210,9 +279,11 @@ class NeuralWaveformRuntimeRoute:
                 "neural_waveform_selection_reason": "selected",
                 "neural_waveform_checkpoint": str(route.checkpoint),
                 "neural_waveform_checkpoint_role": str(route.metadata.get("checkpoint_role") or ""),
-                "neural_waveform_backend": "conditioned-v3-direct-waveform",
+                "neural_waveform_generation": str(route.generation or ""),
+                "neural_waveform_backend": backend,
                 "neural_waveform_structure_lowpass_hz": STRUCTURE_LOWPASS_HZ,
                 "neural_waveform_structure_transition_hz": STRUCTURE_TRANSITION_HZ,
+                "neural_waveform_source_detail_channels": int(source_detail_channels),
             }
             return legacy_np, neural_np, full_stats
 
@@ -223,6 +294,7 @@ class NeuralWaveformRuntimeRoute:
             "loaded": bool(self.model is not None),
             "checkpoint": str(self.checkpoint or ""),
             "checkpoint_role": str(self.metadata.get("checkpoint_role") or ""),
+            "generation": str(self.generation or ""),
             "trained_voicebank": str(self.metadata.get("voicebank") or ""),
             "load_error": self.load_error,
         }
