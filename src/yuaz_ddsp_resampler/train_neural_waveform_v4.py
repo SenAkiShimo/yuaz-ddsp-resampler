@@ -27,6 +27,12 @@ from .neural_waveform_v4 import (
 from .train_neural_waveform import read_fullband_target, stft_mag
 
 
+# Capture the unpatched v3 objective before install_v4_overrides() replaces the
+# module-level symbol.  v4 is defined as an additive objective on top of this
+# frozen base; calling v3.neural_waveform_loss_v3 from inside the v4 loss after
+# monkeypatching would recurse back into v4 indefinitely.
+_V3_BASE_LOSS = v3.neural_waveform_loss_v3
+
 PRESENCE_LOW_HZ = 2000.0
 PRESENCE_HIGH_HZ = 6000.0
 ARTICULATION_LOW_HZ = 1000.0
@@ -120,7 +126,7 @@ def _envelope_derivative_loss(target, pred):
 
 
 def neural_waveform_loss_v4(target, pred):
-    base, base_parts = v3.neural_waveform_loss_v3(target, pred)
+    base, base_parts = _V3_BASE_LOSS(target, pred)
     presence = _presence_logmag_loss(target, pred)
     articulation_flux = _articulation_flux_loss(target, pred)
     envelope_derivative = _envelope_derivative_loss(target, pred)
