@@ -52,6 +52,7 @@ _state.resolve_active_state = _resolve_active_state_readonly_ai14
 _state.lookup_local_record = _lookup_local_record_runtime_compatible
 
 from . import core as _core
+from .controls import parse_yuaz_controls
 from .core import YuazDDSPResamplerEngine
 from .neural_runtime import NeuralWaveformRuntimeRoute
 from .state import atomic_write_json
@@ -68,6 +69,7 @@ class State:
     runtime_root = None
     active_renders = 0
     active_lock = threading.Lock()
+    refiner_ab = threading.local()
 
 
 class Handler(socketserver.StreamRequestHandler):
@@ -89,16 +91,29 @@ class Handler(socketserver.StreamRequestHandler):
             elif request.get("runtime_id") and request.get("runtime_id") != State.runtime_id:
                 response = {"ok": False, "error": "Runtime identity mismatch; refusing cross-version render."}
             elif action == "render":
+                controls = parse_yuaz_controls(request["request"].get("flags", ""))
+                State.refiner_ab.requested = bool(controls.refiner_bypass_enabled)
+                State.refiner_ab.available = False
+                State.refiner_ab.bypassed = False
                 with State.active_lock:
                     State.active_renders += 1
                 try:
                     response = State.engine.render(request["request"])
                     if State.neural_route is not None and isinstance(response, dict):
                         response.update(State.neural_route.stats())
+                    if isinstance(response, dict):
+                        response.update({
+                            "fidelity_refiner_bypass_requested": bool(getattr(State.refiner_ab, "requested", False)),
+                            "fidelity_refiner_available": bool(getattr(State.refiner_ab, "available", False)),
+                            "fidelity_refiner_bypassed": bool(getattr(State.refiner_ab, "bypassed", False)),
+                        })
                     self._log_request(request["request"], response)
                 finally:
                     with State.active_lock:
                         State.active_renders = max(0, State.active_renders - 1)
+                    State.refiner_ab.requested = False
+                    State.refiner_ab.available = False
+                    State.refiner_ab.bypassed = False
             elif action == "shutdown":
                 response = {"ok": True}
                 self.server.shutdown_requested = True
@@ -176,7 +191,14 @@ def main():
                             result = (None, None, [], None)
                         else:
                             raise
-                    State.neural_route.select_record(result[3])
+                    neural_active = State.neural_route.select_record(result[3])
+                    requested = bool(getattr(State.refiner_ab, "requested", False))
+                    refiner_available = bool(result[1] is not None)
+                    bypassed = bool(requested and neural_active and refiner_available)
+                    State.refiner_ab.available = refiner_available
+                    State.refiner_ab.bypassed = bypassed
+                    if bypassed:
+                        return result[0], None, result[2], result[3]
                     return result
 
                 State.engine._models_for_input = models_for_input_runtime_compatible
@@ -184,6 +206,7 @@ def main():
                 neural_info = State.neural_route.describe()
                 print(
                     f"READY {ENGINE_VERSION} {State.runtime_id} {root} "
+                    f"refiner_ab=YQ1 "
                     f"neural_loaded={neural_info.get('loaded')} "
                     f"neural_checkpoint={neural_info.get('checkpoint')}",
                     flush=True,
