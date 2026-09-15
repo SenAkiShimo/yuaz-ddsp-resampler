@@ -5,10 +5,10 @@ cd "$SOURCE"
 [ -f config.json ] || { echo "Run configure-macos.command first."; exit 1; }
 [ -x .venv/bin/python ] || { echo "Run setup-macos.command first."; exit 1; }
 APP="$HOME/Library/Application Support/YuazDDSP"
-FINAL="$APP/0.2.9"
-TMP="$APP/.0.2.9-installing-$$"
+FINAL="$APP/0.3.0"
+TMP="$APP/.0.3.0-installing-$$"
 DEST="$HOME/Library/OpenUtau/Resamplers"
-NAME="Yuaz-DDSP-Resampler-v0.2.9.sh"
+NAME="Yuaz-DDSP-Resampler-v0.3.0.sh"
 mkdir -p "$APP" "$DEST"
 rm -rf "$TMP"; mkdir -p "$TMP"
 rsync -a --delete --exclude '.venv' --exclude 'logs' --exclude '.engine-start.lock' --exclude 'engine.pid' "$SOURCE/" "$TMP/"
@@ -17,9 +17,9 @@ ENVREAL="$(cd "$SOURCE/.venv" && pwd -P)"; ln -s "$ENVREAL" "$TMP/.venv"
 python3 - "$TMP/config.json" <<'PY'
 import json,sys
 c=json.load(open(sys.argv[1]))
-assert c['engine_version']=='0.2.9'
-assert c['port']==47888
-assert c['runtime_id']=='yuaz-0.2.9'
+assert c['engine_version']=='0.3.0'
+assert c['port']==47889
+assert c['runtime_id']=='yuaz-0.3.0'
 assert c['state_namespace']=='.yuaz-0.2.8ai14'
 assert c['state_access']=='read-only-ai14-compatibility'
 assert c['preserve_ai14'] is True
@@ -36,5 +36,5 @@ chmod +x "$DEST/$NAME"
 cp "$FINAL/resampler-manifest.yaml" "$DEST/${NAME%.sh}.yaml"
 echo "Installed: $FINAL"
 echo "Resampler: $DEST/$NAME"
-echo "Port: 47888"
+echo "Port: 47889"
 echo "PRESERVED: .yuaz-0.2.8ai14"

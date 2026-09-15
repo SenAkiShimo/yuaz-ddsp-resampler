@@ -10,8 +10,8 @@ import sys
 import time
 from pathlib import Path
 
-ENGINE_VERSION = "0.2.9"
-DEFAULT_PORT = 47888
+ENGINE_VERSION = "0.3.0"
+DEFAULT_PORT = 47889
 
 
 def project_root():
