@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
-"""Conditioned-v4 trainer.
-
-v4 keeps the proven v3 training split / Pareto selection / target-F0 route, but
-adds pitch-decoupled source-detail conditioning and articulation-sensitive
-losses.  The decoder architecture itself stays compatible with v3 except for
-its wider input projection, allowing a deterministic warm start from the v3
-Pareto checkpoint.
-"""
+"""Conditioned-v4 trainer."""
 
 import os
 from pathlib import Path
@@ -27,10 +20,6 @@ from .neural_waveform_v4 import (
 from .train_neural_waveform import read_fullband_target, stft_mag
 
 
-# Capture the unpatched v3 objective before install_v4_overrides() replaces the
-# module-level symbol.  v4 is defined as an additive objective on top of this
-# frozen base; calling v3.neural_waveform_loss_v3 from inside the v4 loss after
-# monkeypatching would recurse back into v4 indefinitely.
 _V3_BASE_LOSS = v3.neural_waveform_loss_v3
 
 PRESENCE_LOW_HZ = 2000.0
@@ -62,10 +51,6 @@ def prepare_condition_v4(engine, source, source_item, target_f0, seed, return_ra
         )
 
     base = build_neural_conditioning(latent, detail, target_f0, aux)
-
-    # Source-detail always comes from the source recording, never from the
-    # target recording in a cross-pitch pair.  It is frequency-smoothed and
-    # contains no source F0 channel or raw waveform samples.
     source_samples = max(1, int(source["f0"].shape[-1]) * 256)
     source_wave = read_fullband_target(
         source_item["voicebank_root"], source_item, source_samples
@@ -131,9 +116,6 @@ def neural_waveform_loss_v4(target, pred):
     articulation_flux = _articulation_flux_loss(target, pred)
     envelope_derivative = _envelope_derivative_loss(target, pred)
 
-    # WORLDLINE-R reference analysis showed that clarity is carried primarily
-    # by time-varying 2-6 kHz structure, not by simply increasing >8 kHz power.
-    # Keep the v3 reconstruction objective, but make those cues first-class.
     loss = (
         base
         + 0.20 * presence
@@ -178,8 +160,6 @@ def make_model_v4(engine, item):
                 if value.shape[1] > dst.shape[1]:
                     raise RuntimeError("v3 conditioning is wider than v4 conditioning")
                 dst[:, : value.shape[1]] = value.to(dst.dtype)
-                # New source-detail columns remain at the model's initial values,
-                # but are attenuated so training starts close to v3 behavior.
                 dst[:, value.shape[1] :] *= 0.05
                 current[key] = dst
                 copied += 1
