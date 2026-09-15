@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 
 _CONTROL_RE = re.compile(
-    r"(YM|YD|YH|YT|YB|YV|YG|YO|YF|YX|YP|YR)([+-]?(?:\d+(?:\.\d*)?|\.\d+))",
+    r"(YM|YD|YH|YT|YB|YV|YG|YO|YF|YX|YP|YQ|YR)([+-]?(?:\d+(?:\.\d*)?|\.\d+))",
     re.IGNORECASE,
 )
 
@@ -26,6 +26,7 @@ class YuazControls:
     falsetto: float = 0.0
     mixed_voice: float = 0.0
     pharyngeal: float = 0.0
+    refiner_bypass: float = 0.0
     raw_bypass: float = 0.0
 
     @property
@@ -56,6 +57,10 @@ class YuazControls:
             return 12000.0
         strength = self.highband_strength
         return 11800.0 - 3000.0 * (strength ** 0.5)
+
+    @property
+    def refiner_bypass_enabled(self):
+        return float(self.refiner_bypass) >= 0.5
 
     @property
     def raw_bypass_enabled(self):
@@ -129,14 +134,15 @@ def parse_yuaz_controls(flags):
     values = {
         "YM": 0.0, "YD": 0.0, "YH": 0.0,
         "YT": 0.0, "YB": 0.0, "YV": 0.0, "YG": 0.0,
-        "YO": 0.0, "YF": 0.0, "YX": 0.0, "YP": 0.0, "YR": 0.0,
+        "YO": 0.0, "YF": 0.0, "YX": 0.0, "YP": 0.0,
+        "YQ": 0.0, "YR": 0.0,
     }
     for match in _CONTROL_RE.finditer(str(flags or "")):
         key = match.group(1).upper()
         raw = float(match.group(2))
         if key == "YH":
             values[key] = max(0.0, min(100.0, raw))
-        elif key == "YR":
+        elif key in ("YQ", "YR"):
             values[key] = 1.0 if raw >= 0.5 else 0.0
         else:
             values[key] = _clamp(raw)
@@ -145,5 +151,5 @@ def parse_yuaz_controls(flags):
         tension=values["YT"], breathiness=values["YB"], voicing=values["YV"],
         gender_formant=values["YG"], mouth=values["YO"],
         falsetto=values["YF"], mixed_voice=values["YX"], pharyngeal=values["YP"],
-        raw_bypass=values["YR"],
+        refiner_bypass=values["YQ"], raw_bypass=values["YR"],
     )
