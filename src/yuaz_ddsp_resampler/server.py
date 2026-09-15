@@ -73,6 +73,7 @@ class State:
     active_lock = threading.Lock()
     refiner_ab = threading.local()
     articulation_ab = threading.local()
+    neural_direct_ab = threading.local()
 
 
 class Handler(socketserver.StreamRequestHandler):
@@ -100,6 +101,9 @@ class Handler(socketserver.StreamRequestHandler):
                 State.refiner_ab.bypassed = False
                 State.articulation_ab.requested = bool(controls.articulation_trajectory_bypass_enabled)
                 State.articulation_ab.bypassed = False
+                State.neural_direct_ab.requested = bool(controls.neural_direct_enabled)
+                State.neural_direct_ab.active = False
+                State.neural_direct_ab.bypassed = False
                 with State.active_lock:
                     State.active_renders += 1
                 try:
@@ -113,6 +117,10 @@ class Handler(socketserver.StreamRequestHandler):
                             "fidelity_refiner_bypassed": bool(getattr(State.refiner_ab, "bypassed", False)),
                             "articulation_trajectory_bypass_requested": bool(getattr(State.articulation_ab, "requested", False)),
                             "articulation_trajectory_bypassed": bool(getattr(State.articulation_ab, "bypassed", False)),
+                            "neural_direct_requested": bool(getattr(State.neural_direct_ab, "requested", False)),
+                            "neural_direct_active": bool(getattr(State.neural_direct_ab, "active", False)),
+                            "neural_direct_bypassed_outer_pipeline": bool(getattr(State.neural_direct_ab, "bypassed", False)),
+                            "neural_direct_requires_yh0": True,
                         })
                     self._log_request(request["request"], response)
                 finally:
@@ -123,6 +131,9 @@ class Handler(socketserver.StreamRequestHandler):
                     State.refiner_ab.bypassed = False
                     State.articulation_ab.requested = False
                     State.articulation_ab.bypassed = False
+                    State.neural_direct_ab.requested = False
+                    State.neural_direct_ab.active = False
+                    State.neural_direct_ab.bypassed = False
             elif action == "shutdown":
                 response = {"ok": True}
                 self.server.shutdown_requested = True
@@ -192,15 +203,33 @@ def main():
                 State.neural_route.install_patch(_core)
 
                 original_articulation_hybrid_mix = _core.articulation_hybrid_mix
+                original_blend_v1 = _core.blend_dualrate_fullband_body
+                original_blend_v2 = _core.blend_dualrate_fullband_body_v2
+                original_blend_v3 = _core.blend_dualrate_fullband_body_v3
+                original_terminal_guard = _core.apply_output_terminal_guard_numpy
 
                 def articulation_hybrid_mix_runtime_ab(
                     original, generated, sr, source_f0, target_f0, regions,
                     source_fixed_ms, target_fixed_ms, target_ms, canonical_template=None,
                 ):
+                    direct = bool(getattr(State.neural_direct_ab, "active", False))
+                    if direct:
+                        return np.asarray(generated, dtype=np.float32).copy(), {
+                            "target_onset_ms": 0.0,
+                            "target_transition_end_ms": 0.0,
+                            "target_articulation_end_ms": 0.0,
+                            "trajectory_transfer_used": False,
+                            "trajectory_source": "neural-direct-bypass",
+                            "single_periodic_source": True,
+                            "psola_used": False,
+                            "phase_shift_ms": 0.0,
+                            "hybrid_gain": 1.0,
+                            "trajectory_gain_rms_db": 0.0,
+                            "trajectory_strength": 0.0,
+                            "canonical_coherence": 0.0,
+                        }
                     requested = bool(getattr(State.articulation_ab, "requested", False))
                     if requested:
-                        # Zero trajectory preserves v1 timing/raw-prefix behavior while
-                        # removing canonical/local spectral trajectory shaping.
                         canonical_template = {
                             "trajectory": np.zeros((129, 32), dtype=np.float32),
                             "energy_delta": np.zeros(32, dtype=np.float32),
@@ -223,7 +252,38 @@ def main():
                         stats["trajectory_strength"] = 0.0
                     return mixed, stats
 
+                def direct_blend_wrapper(original_fn):
+                    def wrapped(legacy_output, fullband_output, sr, *args, **kwargs):
+                        if bool(getattr(State.neural_direct_ab, "active", False)):
+                            hi = np.asarray(fullband_output, dtype=np.float32).reshape(-1)
+                            State.neural_direct_ab.bypassed = True
+                            return hi.copy(), {
+                                "used": True,
+                                "backend": "neural-direct-fullband",
+                                "crossover_start_hz": 0.0,
+                                "crossover_full_hz": 0.0,
+                                "fullband_branch_rms": float(np.sqrt(np.mean(hi.astype(np.float64) ** 2) + 1e-12)),
+                                "fullband_safety_gain": 1.0,
+                                "upperband_edge_rms": 0.0,
+                            }
+                        return original_fn(legacy_output, fullband_output, sr, *args, **kwargs)
+                    return wrapped
+
+                def terminal_guard_runtime_ab(audio, sample_rate, output_sample_rate=None, *args, **kwargs):
+                    if bool(getattr(State.neural_direct_ab, "active", False)):
+                        return np.asarray(audio, dtype=np.float32).copy(), {
+                            "used": False,
+                            "reason": "neural-direct-bypass",
+                            "terminal_gain_at_20k": 1.0,
+                            "terminal_gain_at_21k": 1.0,
+                        }
+                    return original_terminal_guard(audio, sample_rate, output_sample_rate, *args, **kwargs)
+
                 _core.articulation_hybrid_mix = articulation_hybrid_mix_runtime_ab
+                _core.blend_dualrate_fullband_body = direct_blend_wrapper(original_blend_v1)
+                _core.blend_dualrate_fullband_body_v2 = direct_blend_wrapper(original_blend_v2)
+                _core.blend_dualrate_fullband_body_v3 = direct_blend_wrapper(original_blend_v3)
+                _core.apply_output_terminal_guard_numpy = terminal_guard_runtime_ab
 
                 original_models_for_input = State.engine._models_for_input
 
@@ -236,7 +296,11 @@ def main():
                         else:
                             raise
                     neural_active = State.neural_route.select_record(result[3])
-                    requested = bool(getattr(State.refiner_ab, "requested", False))
+                    direct_requested = bool(getattr(State.neural_direct_ab, "requested", False))
+                    direct_active = bool(direct_requested and neural_active)
+                    State.neural_direct_ab.active = direct_active
+
+                    requested = bool(getattr(State.refiner_ab, "requested", False)) or direct_active
                     refiner_available = bool(result[1] is not None)
                     bypassed = bool(requested and neural_active and refiner_available)
                     State.refiner_ab.available = refiner_available
@@ -250,7 +314,7 @@ def main():
                 neural_info = State.neural_route.describe()
                 print(
                     f"READY {ENGINE_VERSION} {State.runtime_id} {root} "
-                    f"refiner_ab=YQ1 articulation_trajectory_ab=YA1 "
+                    f"refiner_ab=YQ1 articulation_trajectory_ab=YA1 neural_direct_ab=YN1 "
                     f"neural_loaded={neural_info.get('loaded')} "
                     f"neural_checkpoint={neural_info.get('checkpoint')}",
                     flush=True,
