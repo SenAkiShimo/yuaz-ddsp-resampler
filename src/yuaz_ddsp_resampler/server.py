@@ -7,8 +7,6 @@ import threading
 import traceback
 from pathlib import Path
 
-import numpy as np
-
 from . import state as _state
 
 _original_resolve_active_state = _state.resolve_active_state
@@ -54,7 +52,6 @@ _state.resolve_active_state = _resolve_active_state_readonly_ai14
 _state.lookup_local_record = _lookup_local_record_runtime_compatible
 
 from . import core as _core
-from .controls import parse_yuaz_controls
 from .core import YuazDDSPResamplerEngine
 from .neural_runtime import NeuralWaveformRuntimeRoute
 from .state import atomic_write_json
@@ -71,9 +68,6 @@ class State:
     runtime_root = None
     active_renders = 0
     active_lock = threading.Lock()
-    refiner_ab = threading.local()
-    articulation_ab = threading.local()
-    neural_direct_ab = threading.local()
 
 
 class Handler(socketserver.StreamRequestHandler):
@@ -96,15 +90,6 @@ class Handler(socketserver.StreamRequestHandler):
                 response = {"ok": False, "error": "Runtime identity mismatch; refusing cross-version render."}
             elif action == "render":
                 render_request = request["request"]
-                controls = parse_yuaz_controls(render_request.get("flags", ""))
-                State.refiner_ab.requested = bool(controls.refiner_bypass_enabled)
-                State.refiner_ab.available = False
-                State.refiner_ab.bypassed = False
-                State.articulation_ab.requested = bool(controls.articulation_trajectory_bypass_enabled)
-                State.articulation_ab.bypassed = False
-                State.neural_direct_ab.requested = bool(controls.neural_direct_enabled)
-                State.neural_direct_ab.active = False
-                State.neural_direct_ab.bypassed = False
                 if State.neural_route is not None:
                     State.neural_route.set_request_context(render_request)
                 with State.active_lock:
@@ -113,30 +98,10 @@ class Handler(socketserver.StreamRequestHandler):
                     response = State.engine.render(render_request)
                     if State.neural_route is not None and isinstance(response, dict):
                         response.update(State.neural_route.stats())
-                    if isinstance(response, dict):
-                        response.update({
-                            "fidelity_refiner_bypass_requested": bool(getattr(State.refiner_ab, "requested", False)),
-                            "fidelity_refiner_available": bool(getattr(State.refiner_ab, "available", False)),
-                            "fidelity_refiner_bypassed": bool(getattr(State.refiner_ab, "bypassed", False)),
-                            "articulation_trajectory_bypass_requested": bool(getattr(State.articulation_ab, "requested", False)),
-                            "articulation_trajectory_bypassed": bool(getattr(State.articulation_ab, "bypassed", False)),
-                            "neural_direct_requested": bool(getattr(State.neural_direct_ab, "requested", False)),
-                            "neural_direct_active": bool(getattr(State.neural_direct_ab, "active", False)),
-                            "neural_direct_bypassed_outer_pipeline": bool(getattr(State.neural_direct_ab, "bypassed", False)),
-                            "neural_direct_requires_yh0": True,
-                        })
                     self._log_request(render_request, response)
                 finally:
                     with State.active_lock:
                         State.active_renders = max(0, State.active_renders - 1)
-                    State.refiner_ab.requested = False
-                    State.refiner_ab.available = False
-                    State.refiner_ab.bypassed = False
-                    State.articulation_ab.requested = False
-                    State.articulation_ab.bypassed = False
-                    State.neural_direct_ab.requested = False
-                    State.neural_direct_ab.active = False
-                    State.neural_direct_ab.bypassed = False
                     if State.neural_route is not None:
                         State.neural_route.clear_request_context()
             elif action == "shutdown":
@@ -207,89 +172,6 @@ def main():
                 State.neural_route = NeuralWaveformRuntimeRoute(root, config, device=State.engine.device)
                 State.neural_route.install_patch(_core)
 
-                original_articulation_hybrid_mix = _core.articulation_hybrid_mix
-                original_blend_v1 = _core.blend_dualrate_fullband_body
-                original_blend_v2 = _core.blend_dualrate_fullband_body_v2
-                original_blend_v3 = _core.blend_dualrate_fullband_body_v3
-                original_terminal_guard = _core.apply_output_terminal_guard_numpy
-
-                def articulation_hybrid_mix_runtime_ab(
-                    original, generated, sr, source_f0, target_f0, regions,
-                    source_fixed_ms, target_fixed_ms, target_ms, canonical_template=None,
-                ):
-                    direct = bool(getattr(State.neural_direct_ab, "active", False))
-                    if direct:
-                        return np.asarray(generated, dtype=np.float32).copy(), {
-                            "target_onset_ms": 0.0,
-                            "target_transition_end_ms": 0.0,
-                            "target_articulation_end_ms": 0.0,
-                            "trajectory_transfer_used": False,
-                            "trajectory_source": "neural-direct-bypass",
-                            "single_periodic_source": True,
-                            "psola_used": False,
-                            "phase_shift_ms": 0.0,
-                            "hybrid_gain": 1.0,
-                            "trajectory_gain_rms_db": 0.0,
-                            "trajectory_strength": 0.0,
-                            "canonical_coherence": 0.0,
-                        }
-                    requested = bool(getattr(State.articulation_ab, "requested", False))
-                    if requested:
-                        canonical_template = {
-                            "trajectory": np.zeros((129, 32), dtype=np.float32),
-                            "energy_delta": np.zeros(32, dtype=np.float32),
-                            "n_fft": 256,
-                            "frames": 32,
-                            "coherence": 1.0,
-                            "source_count": 0,
-                        }
-                        State.articulation_ab.bypassed = True
-                    mixed, stats = original_articulation_hybrid_mix(
-                        original, generated, sr, source_f0, target_f0, regions,
-                        source_fixed_ms, target_fixed_ms, target_ms,
-                        canonical_template=canonical_template,
-                    )
-                    if requested and isinstance(stats, dict):
-                        stats = dict(stats)
-                        stats["trajectory_transfer_used"] = False
-                        stats["trajectory_source"] = "bypassed-zero-template"
-                        stats["trajectory_gain_rms_db"] = 0.0
-                        stats["trajectory_strength"] = 0.0
-                    return mixed, stats
-
-                def direct_blend_wrapper(original_fn):
-                    def wrapped(legacy_output, fullband_output, sr, *args, **kwargs):
-                        if bool(getattr(State.neural_direct_ab, "active", False)):
-                            hi = np.asarray(fullband_output, dtype=np.float32).reshape(-1)
-                            State.neural_direct_ab.bypassed = True
-                            return hi.copy(), {
-                                "used": True,
-                                "backend": "neural-direct-fullband",
-                                "crossover_start_hz": 0.0,
-                                "crossover_full_hz": 0.0,
-                                "fullband_branch_rms": float(np.sqrt(np.mean(hi.astype(np.float64) ** 2) + 1e-12)),
-                                "fullband_safety_gain": 1.0,
-                                "upperband_edge_rms": 0.0,
-                            }
-                        return original_fn(legacy_output, fullband_output, sr, *args, **kwargs)
-                    return wrapped
-
-                def terminal_guard_runtime_ab(audio, sample_rate, output_sample_rate=None, *args, **kwargs):
-                    if bool(getattr(State.neural_direct_ab, "active", False)):
-                        return np.asarray(audio, dtype=np.float32).copy(), {
-                            "used": False,
-                            "reason": "neural-direct-bypass",
-                            "terminal_gain_at_20k": 1.0,
-                            "terminal_gain_at_21k": 1.0,
-                        }
-                    return original_terminal_guard(audio, sample_rate, output_sample_rate, *args, **kwargs)
-
-                _core.articulation_hybrid_mix = articulation_hybrid_mix_runtime_ab
-                _core.blend_dualrate_fullband_body = direct_blend_wrapper(original_blend_v1)
-                _core.blend_dualrate_fullband_body_v2 = direct_blend_wrapper(original_blend_v2)
-                _core.blend_dualrate_fullband_body_v3 = direct_blend_wrapper(original_blend_v3)
-                _core.apply_output_terminal_guard_numpy = terminal_guard_runtime_ab
-
                 original_models_for_input = State.engine._models_for_input
 
                 def models_for_input_runtime_compatible(path):
@@ -300,18 +182,7 @@ def main():
                             result = (None, None, [], None)
                         else:
                             raise
-                    neural_active = State.neural_route.select_record(result[3])
-                    direct_requested = bool(getattr(State.neural_direct_ab, "requested", False))
-                    direct_active = bool(direct_requested and neural_active)
-                    State.neural_direct_ab.active = direct_active
-
-                    requested = bool(getattr(State.refiner_ab, "requested", False)) or direct_active
-                    refiner_available = bool(result[1] is not None)
-                    bypassed = bool(requested and neural_active and refiner_available)
-                    State.refiner_ab.available = refiner_available
-                    State.refiner_ab.bypassed = bypassed
-                    if bypassed:
-                        return result[0], None, result[2], result[3]
+                    State.neural_route.select_record(result[3])
                     return result
 
                 State.engine._models_for_input = models_for_input_runtime_compatible
@@ -319,7 +190,6 @@ def main():
                 neural_info = State.neural_route.describe()
                 print(
                     f"READY {ENGINE_VERSION} {State.runtime_id} {root} "
-                    f"refiner_ab=YQ1 articulation_trajectory_ab=YA1 neural_direct_ab=YN1 "
                     f"neural_loaded={neural_info.get('loaded')} "
                     f"neural_generation={neural_info.get('generation')} "
                     f"neural_checkpoint={neural_info.get('checkpoint')}",
