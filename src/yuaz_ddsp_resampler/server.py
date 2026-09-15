@@ -95,7 +95,8 @@ class Handler(socketserver.StreamRequestHandler):
             elif request.get("runtime_id") and request.get("runtime_id") != State.runtime_id:
                 response = {"ok": False, "error": "Runtime identity mismatch; refusing cross-version render."}
             elif action == "render":
-                controls = parse_yuaz_controls(request["request"].get("flags", ""))
+                render_request = request["request"]
+                controls = parse_yuaz_controls(render_request.get("flags", ""))
                 State.refiner_ab.requested = bool(controls.refiner_bypass_enabled)
                 State.refiner_ab.available = False
                 State.refiner_ab.bypassed = False
@@ -104,10 +105,12 @@ class Handler(socketserver.StreamRequestHandler):
                 State.neural_direct_ab.requested = bool(controls.neural_direct_enabled)
                 State.neural_direct_ab.active = False
                 State.neural_direct_ab.bypassed = False
+                if State.neural_route is not None:
+                    State.neural_route.set_request_context(render_request)
                 with State.active_lock:
                     State.active_renders += 1
                 try:
-                    response = State.engine.render(request["request"])
+                    response = State.engine.render(render_request)
                     if State.neural_route is not None and isinstance(response, dict):
                         response.update(State.neural_route.stats())
                     if isinstance(response, dict):
@@ -122,7 +125,7 @@ class Handler(socketserver.StreamRequestHandler):
                             "neural_direct_bypassed_outer_pipeline": bool(getattr(State.neural_direct_ab, "bypassed", False)),
                             "neural_direct_requires_yh0": True,
                         })
-                    self._log_request(request["request"], response)
+                    self._log_request(render_request, response)
                 finally:
                     with State.active_lock:
                         State.active_renders = max(0, State.active_renders - 1)
@@ -134,6 +137,8 @@ class Handler(socketserver.StreamRequestHandler):
                     State.neural_direct_ab.requested = False
                     State.neural_direct_ab.active = False
                     State.neural_direct_ab.bypassed = False
+                    if State.neural_route is not None:
+                        State.neural_route.clear_request_context()
             elif action == "shutdown":
                 response = {"ok": True}
                 self.server.shutdown_requested = True
@@ -316,6 +321,7 @@ def main():
                     f"READY {ENGINE_VERSION} {State.runtime_id} {root} "
                     f"refiner_ab=YQ1 articulation_trajectory_ab=YA1 neural_direct_ab=YN1 "
                     f"neural_loaded={neural_info.get('loaded')} "
+                    f"neural_generation={neural_info.get('generation')} "
                     f"neural_checkpoint={neural_info.get('checkpoint')}",
                     flush=True,
                 )
