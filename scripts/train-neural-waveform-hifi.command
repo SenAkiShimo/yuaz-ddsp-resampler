@@ -9,6 +9,8 @@ VOICEBANK="${1:-}"
 if [ -z "$VOICEBANK" ]; then
   echo "Drop the voicebank folder here, then press Return:"
   read -r VOICEBANK
+else
+  shift
 fi
 VOICEBANK="${VOICEBANK#\'}"; VOICEBANK="${VOICEBANK%\'}"
 VOICEBANK="${VOICEBANK#\"}"; VOICEBANK="${VOICEBANK%\"}"
@@ -37,12 +39,8 @@ echo "Warm-start: this voicebank's robust v4 Pareto checkpoint"
 echo "High-band conditioning: 6-22 kHz, 64 fine bands, no frequency smoothing"
 echo "Default schedule: 1 native epoch + 2 multipitch epochs"
 
-a=()
-if [ "$#" -gt 1 ]; then
-  a=("${@:2}")
-fi
 exec "$ROOT/.venv/bin/python" -m yuaz_ddsp_resampler.train_neural_waveform_hifi \
   --project-root "$ROOT" \
   --voicebank "$VOICEBANK" \
   --manifest "$MANIFEST" \
-  "${a[@]}"
+  "$@"
