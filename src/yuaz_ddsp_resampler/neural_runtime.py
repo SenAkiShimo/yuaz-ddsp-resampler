@@ -13,12 +13,17 @@ from .neural_waveform_v4 import (
     append_source_detail,
     build_pitch_invariant_source_detail,
 )
+from .neural_waveform_hifi import (
+    HIFI_CHANNELS,
+    append_highband_detail,
+    build_highband_source_detail,
+)
 
 
 SAMPLE_RATE = 48000
 STRUCTURE_LOWPASS_HZ = 9000.0
 STRUCTURE_TRANSITION_HZ = 1500.0
-SUPPORTED_GENERATIONS = {"conditioned-v3", "conditioned-v4"}
+SUPPORTED_GENERATIONS = {"conditioned-v3", "conditioned-v4", "conditioned-v4-hifi"}
 
 
 def smooth_lowpass_structure(x, cutoff_hz=STRUCTURE_LOWPASS_HZ, transition_hz=STRUCTURE_TRANSITION_HZ):
@@ -39,7 +44,7 @@ def smooth_lowpass_structure(x, cutoff_hz=STRUCTURE_LOWPASS_HZ, transition_hz=ST
 
 
 class NeuralWaveformRuntimeRoute:
-    """Voicebank-scoped v0.3 neural waveform route with exact legacy fallback."""
+    """Voicebank-scoped neural waveform route with exact legacy fallback."""
 
     def __init__(self, runtime_root, config, device="cpu"):
         self.runtime_root = Path(runtime_root).expanduser().resolve()
@@ -81,9 +86,10 @@ class NeuralWaveformRuntimeRoute:
             if not p.is_absolute():
                 p = self.runtime_root / p
             candidates.append(p)
-        # v4 is preferred when a trained checkpoint is present.  If not, the
-        # frozen v3 runtime route remains the exact fallback.
         candidates.extend([
+            self.runtime_root / "control_models" / "neural-waveform-v0.4-hifi-pareto-best.pt",
+            self.runtime_root / "control_models" / "neural-waveform-v0.4-hifi-multipitch-best.pt",
+            self.runtime_root / "control_models" / "neural-waveform-v0.4-hifi.pt",
             self.runtime_root / "control_models" / "neural-waveform-v0.3.0-conditioned-v4-pareto-best.pt",
             self.runtime_root / "control_models" / "neural-waveform-v0.3.0-conditioned-v4-multipitch-best.pt",
             self.runtime_root / "control_models" / "neural-waveform-v0.3.0-conditioned-v4.pt",
@@ -157,14 +163,14 @@ class NeuralWaveformRuntimeRoute:
     def stats(self):
         return dict(getattr(self.local, "last_stats", {}) or {})
 
-    def _source_detail_for_request(self, frames, core_module):
+    def _source_wave_for_request(self, core_module):
         request = dict(getattr(self.local, "request", {}) or {})
         input_path = request.get("input")
         if not input_path:
-            raise RuntimeError("conditioned-v4 runtime is missing the source input path")
+            raise RuntimeError(f"{self.generation or 'conditioned runtime'} is missing the source input path")
         path = Path(str(input_path)).expanduser().resolve()
         if not path.is_file():
-            raise RuntimeError(f"conditioned-v4 source input is unavailable: {path}")
+            raise RuntimeError(f"conditioned source input is unavailable: {path}")
 
         audio, sr = sf.read(path, always_2d=False)
         if getattr(audio, "ndim", 1) > 1:
@@ -179,9 +185,16 @@ class NeuralWaveformRuntimeRoute:
         if int(sr) != SAMPLE_RATE:
             audio = librosa.resample(audio, orig_sr=int(sr), target_sr=SAMPLE_RATE).astype(np.float32)
         if audio.size < 16:
-            raise RuntimeError("conditioned-v4 source crop is empty")
-        source = torch.from_numpy(audio).to(self.device).view(1, 1, -1)
+            raise RuntimeError("conditioned source crop is empty")
+        return torch.from_numpy(audio).to(self.device).view(1, 1, -1)
+
+    def _source_detail_for_request(self, frames, core_module):
+        source = self._source_wave_for_request(core_module)
         return build_pitch_invariant_source_detail(source, int(frames))
+
+    def _highband_detail_for_request(self, frames, core_module):
+        source = self._source_wave_for_request(core_module)
+        return build_highband_source_detail(source, int(frames), sample_rate=SAMPLE_RATE)
 
     def install_patch(self, core_module):
         if self.original_decode is not None:
@@ -233,13 +246,22 @@ class NeuralWaveformRuntimeRoute:
                     raise RuntimeError("neural runtime DDSP conditioning did not return legacy_wav")
                 conditioning = build_neural_conditioning(z, detail, f0, aux)
                 source_detail_channels = 0
-                if route.generation == "conditioned-v4":
+                hifi_detail_channels = 0
+                if route.generation in {"conditioned-v4", "conditioned-v4-hifi"}:
                     source_detail = route._source_detail_for_request(conditioning.shape[-1], core_module)
                     conditioning = append_source_detail(conditioning, source_detail)
                     source_detail_channels = int(source_detail.shape[1])
                     if source_detail_channels != int(SOURCE_DETAIL_CHANNELS):
                         raise RuntimeError(
                             f"conditioned-v4 source-detail width mismatch: {source_detail_channels} != {SOURCE_DETAIL_CHANNELS}"
+                        )
+                if route.generation == "conditioned-v4-hifi":
+                    highband_detail = route._highband_detail_for_request(conditioning.shape[-1], core_module)
+                    conditioning = append_highband_detail(conditioning, highband_detail)
+                    hifi_detail_channels = int(highband_detail.shape[1])
+                    if hifi_detail_channels != int(HIFI_CHANNELS):
+                        raise RuntimeError(
+                            f"HiFi source-detail width mismatch: {hifi_detail_channels} != {HIFI_CHANNELS}"
                         )
                 if int(conditioning.shape[1]) != int(route.model.condition_channels):
                     raise RuntimeError(
@@ -257,11 +279,12 @@ class NeuralWaveformRuntimeRoute:
                 int(decoder.sample_rate),
                 legacy_samples,
             )
-            backend = (
-                "conditioned-v4-source-detail-waveform"
-                if route.generation == "conditioned-v4"
-                else "conditioned-v3-direct-waveform"
-            )
+            if route.generation == "conditioned-v4-hifi":
+                backend = "conditioned-v4-hifi-source-texture-waveform"
+            elif route.generation == "conditioned-v4":
+                backend = "conditioned-v4-source-detail-waveform"
+            else:
+                backend = "conditioned-v3-direct-waveform"
             full_stats = dict(aux.get("fullband_stats") or {})
             full_stats.update({
                 "neural_waveform_used": True,
@@ -272,6 +295,7 @@ class NeuralWaveformRuntimeRoute:
                 "neural_waveform_structure_lowpass_hz": STRUCTURE_LOWPASS_HZ,
                 "neural_waveform_structure_transition_hz": STRUCTURE_TRANSITION_HZ,
                 "neural_waveform_source_detail_channels": int(source_detail_channels),
+                "neural_waveform_hifi_detail_channels": int(hifi_detail_channels),
             })
             route.local.last_stats = {
                 "neural_waveform_loaded": True,
@@ -284,6 +308,7 @@ class NeuralWaveformRuntimeRoute:
                 "neural_waveform_structure_lowpass_hz": STRUCTURE_LOWPASS_HZ,
                 "neural_waveform_structure_transition_hz": STRUCTURE_TRANSITION_HZ,
                 "neural_waveform_source_detail_channels": int(source_detail_channels),
+                "neural_waveform_hifi_detail_channels": int(hifi_detail_channels),
             }
             return legacy_np, neural_np, full_stats
 
