@@ -75,14 +75,28 @@ def write_audio(path, tensor_or_array):
 
 def resolve_track_checkpoints(root, voicebank):
     bank_id = voicebank_id(voicebank)
-    bank_root = root / "control_models" / "v0.4" / bank_id
+
+    # Check the active source tree first, then the installed runtime. v0.4
+    # checkpoints are gitignored, so a clean/new worktree may not contain the
+    # already-trained files even though install-openutau-macos copied them into
+    # ~/Library/Application Support/YuazDDSP/0.3.0.
+    search_roots = [
+        Path(root).expanduser().resolve(),
+        Path.home() / "Library" / "Application Support" / "YuazDDSP" / "0.3.0",
+    ]
+
     resolved = {}
     missing = []
     for label, stage_dir, filename, expected_generation in TRACKS:
-        path = bank_root / stage_dir / filename
-        if not path.is_file():
-            missing.append(str(path))
+        candidates = [
+            base / "control_models" / "v0.4" / bank_id / stage_dir / filename
+            for base in search_roots
+        ]
+        path = next((p for p in candidates if p.is_file()), None)
+        if path is None:
+            missing.append(" OR ".join(str(p) for p in candidates))
             continue
+
         model, metadata = load_neural_waveform_decoder(path, device="cpu")
         del model
         trained_bank = Path(str(metadata.get("voicebank") or "")).expanduser().resolve()
@@ -100,10 +114,13 @@ def resolve_track_checkpoints(root, voicebank):
             "generation": generation,
             "metadata": metadata,
         }
+        print(f"resolved {label} checkpoint: {path}", flush=True)
+
     if missing:
         raise RuntimeError(
-            "required v0.4 checkpoints are missing:\n  " + "\n  ".join(missing)
-            + "\nRun robust v0.4 training and HiFi fine-tuning for this voicebank first."
+            "required v0.4 checkpoints are missing from both the source tree and installed 0.3.0 runtime:\n  "
+            + "\n  ".join(missing)
+            + "\nIf these files are not present in the installed runtime either, locate the prior training output before retraining."
         )
     return bank_id, resolved
 
